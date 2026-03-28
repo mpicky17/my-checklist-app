@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Checklist</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="My Checklist" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <meta name="theme-color" content="#4f46e5" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 48px 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 640px;
+      padding: 32px;
+      height: fit-content;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #1a1a1a;
+      cursor: text;
+      border-radius: 4px;
+      padding: 2px 4px;
+      margin: -2px -4px;
+      transition: background 0.15s;
+    }
+
+    h1:hover {
+      background: #f5f3ff;
+    }
+
+    .title-input {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #1a1a1a;
+      border: none;
+      outline: 2px solid #4f46e5;
+      border-radius: 4px;
+      padding: 2px 4px;
+      background: #f5f3ff;
+      font-family: inherit;
+    }
+
+    .layout-tabs {
+      display: flex;
+      gap: 4px;
+      background: #f0f0f0;
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    .layout-tab {
+      border: none;
+      background: transparent;
+      padding: 5px 16px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      color: #888;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .layout-tab.active {
+      background: #fff;
+      color: #1a1a1a;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+    }
+
+    .tab-name-input {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #1a1a1a;
+      border: none;
+      outline: 2px solid #4f46e5;
+      border-radius: 4px;
+      padding: 3px 6px;
+      background: #f5f3ff;
+      font-family: inherit;
+      width: 90px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 0;
+      border-bottom: 1px solid #f0f0f0;
+      position: relative;
+    }
+
+    .row:last-child {
+      border-bottom: none;
+    }
+
+    .drag-handle {
+      cursor: grab;
+      color: #ccc;
+      font-size: 1rem;
+      line-height: 1;
+      flex-shrink: 0;
+      padding: 2px 2px;
+      visibility: hidden;
+      user-select: none;
+    }
+
+    .row:hover .drag-handle {
+      visibility: visible;
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .row.dragging {
+      opacity: 0.4;
+    }
+
+    .drop-indicator {
+      height: 2px;
+      background: #4f46e5;
+      border-radius: 2px;
+      margin: 0;
+      pointer-events: none;
+    }
+
+    .row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: #4f46e5;
+      flex-shrink: 0;
+    }
+
+    .row input[type="text"] {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-size: 1rem;
+      color: #1a1a1a;
+      background: transparent;
+      padding: 6px 4px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .row input[type="text"]:focus {
+      background: #f5f3ff;
+    }
+
+    .row input[type="text"]::placeholder {
+      color: #aaa;
+    }
+
+    .row.checked input[type="text"] {
+      color: #aaa;
+      text-decoration: line-through;
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #ccc;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 4px 6px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+      visibility: hidden;
+    }
+
+    .row:hover .delete-btn {
+      visibility: visible;
+    }
+
+    .delete-btn:hover {
+      color: #ef4444;
+      background: #fef2f2;
+    }
+
+    .add-row .drag-handle,
+    .add-row .delete-btn {
+      visibility: hidden !important;
+    }
+
+    /* On touch devices, always show the drag handle (no hover state) */
+    @media (hover: none) {
+      .drag-handle {
+        visibility: visible;
+      }
+    }
+
+    .touch-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 1000;
+      background: #fff;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+      border-radius: 8px;
+      opacity: 0.92;
+      padding: 5px 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>My Checklist</h1>
+      <div class="layout-tabs">
+        <button class="layout-tab active" data-layout="A">Layout A</button>
+        <button class="layout-tab" data-layout="B">Layout B</button>
+      </div>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <script>
+    // State: items are shared, layouts store independent orderings of item IDs
+    let state = {
+      items: {},          // { [id]: { text, checked } }
+      layouts: { A: [], B: [] },
+      current: 'A',
+      title: 'My Checklist',
+      layoutNames: { A: 'Layout A', B: 'Layout B' }
+    };
+
+    const list = document.getElementById('list');
+    let dragId = null;
+    let dropIndicatorEl = null;
+
+    // Touch drag state
+    let touchDragId = null;
+    let touchGhost = null;
+    let touchDragRow = null;
+
+    // ── Persistence ──────────────────────────────────────────────────────────
+
+    function save() {
+      localStorage.setItem('checklist-v2', JSON.stringify(state));
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem('checklist-v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Merge so new fields get defaults if missing
+        state = Object.assign(state, parsed);
+        state.layoutNames = Object.assign({ A: 'Layout A', B: 'Layout B' }, parsed.layoutNames);
+      } else {
+        // Migrate from old format if present
+        const old = localStorage.getItem('checklist');
+        if (old) {
+          const rows = JSON.parse(old);
+          rows.forEach(({ text, checked }) => {
+            const id = genId();
+            state.items[id] = { text, checked };
+            state.layouts.A.push(id);
+            state.layouts.B.push(id);
+          });
+        }
+      }
+    }
+
+    function genId() {
+      return '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────────────────
+
+    function render() {
+      // Sync title
+      const h1 = document.querySelector('h1');
+      if (h1) h1.textContent = state.title;
+
+      // Sync tab labels and active state
+      document.querySelectorAll('.layout-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.layout === state.current);
+        btn.textContent = state.layoutNames[btn.dataset.layout];
+      });
+
+      // Remove all content rows, keep add-row
+      [...list.querySelectorAll('.row:not(.add-row)')].forEach(r => r.remove());
+      removeDropIndicator();
+
+      const addRow = list.querySelector('.add-row');
+      state.layouts[state.current].forEach(id => {
+        if (state.items[id]) {
+          list.insertBefore(createRow(id), addRow);
+        }
+      });
+    }
+
+    function createRow(id) {
+      const item = state.items[id];
+      const row = document.createElement('div');
+      row.className = 'row' + (item.checked ? ' checked' : '');
+      row.dataset.id = id;
+      row.draggable = true;
+
+      // Drag handle
+      const handle = document.createElement('span');
+      handle.className = 'drag-handle';
+      handle.textContent = '⠿';
+      handle.title = 'Drag to reorder';
+
+      // Checkbox
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = item.checked;
+      cb.addEventListener('change', () => {
+        state.items[id].checked = cb.checked;
+        row.classList.toggle('checked', cb.checked);
+        save();
+      });
+
+      // Text input
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = item.text;
+      input.addEventListener('input', () => {
+        state.items[id].text = input.value;
+        save();
+      });
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          list.querySelector('.add-row input').focus();
+        }
+      });
+
+      // Delete button
+      const del = document.createElement('button');
+      del.className = 'delete-btn';
+      del.title = 'Delete row';
+      del.textContent = '×';
+      del.addEventListener('click', () => {
+        delete state.items[id];
+        state.layouts.A = state.layouts.A.filter(x => x !== id);
+        state.layouts.B = state.layouts.B.filter(x => x !== id);
+        save();
+        row.remove();
+      });
+
+      // ── Drag events ───────────────────────────────────────────────────────
+
+      row.addEventListener('dragstart', e => {
+        dragId = id;
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => row.classList.add('dragging'), 0);
+      });
+
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        dragId = null;
+        removeDropIndicator();
+      });
+
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (!dragId || dragId === id) return;
+        e.dataTransfer.dropEffect = 'move';
+        const after = isCursorAfterMidpoint(e, row);
+        showDropIndicator(row, after);
+      });
+
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!dragId || dragId === id) return;
+        const after = isCursorAfterMidpoint(e, row);
+        reorder(dragId, id, after);
+      });
+
+      // ── Touch drag events (iOS Safari) ────────────────────────────────────
+
+      handle.addEventListener('touchstart', e => {
+        e.preventDefault(); // prevent scroll while dragging
+        touchDragId = id;
+        touchDragRow = row;
+        row.classList.add('dragging');
+
+        const touch = e.touches[0];
+        const rect = row.getBoundingClientRect();
+
+        touchGhost = document.createElement('div');
+        touchGhost.className = 'touch-ghost';
+        touchGhost.textContent = state.items[id].text || '…';
+        touchGhost.style.width = rect.width + 'px';
+        touchGhost.style.top = (touch.clientY - rect.height / 2) + 'px';
+        touchGhost.style.left = rect.left + 'px';
+        document.body.appendChild(touchGhost);
+      }, { passive: false });
+
+      handle.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (!touchDragId) return;
+        const touch = e.touches[0];
+
+        // Move ghost with finger
+        const rect = touchGhost.getBoundingClientRect();
+        touchGhost.style.top = (touch.clientY - rect.height / 2) + 'px';
+
+        // Find element under finger (hide ghost so it doesn't block hit-test)
+        touchGhost.style.display = 'none';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        touchGhost.style.display = '';
+
+        const targetRow = el && el.closest('.row:not(.add-row):not(.dragging)');
+        const targetAddRow = el && el.closest('.add-row');
+
+        if (targetRow && targetRow.dataset.id !== touchDragId) {
+          const tRect = targetRow.getBoundingClientRect();
+          showDropIndicator(targetRow, touch.clientY > tRect.top + tRect.height / 2);
+        } else if (targetAddRow) {
+          showDropIndicator(targetAddRow, false);
+        } else {
+          removeDropIndicator();
+        }
+      }, { passive: false });
+
+      handle.addEventListener('touchend', e => {
+        if (!touchDragId) return;
+        const touch = e.changedTouches[0];
+
+        if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+        if (touchDragRow) { touchDragRow.classList.remove('dragging'); touchDragRow = null; }
+
+        touchGhost = null;
+        const fromId = touchDragId;
+        touchDragId = null;
+
+        touchGhost = null; // already removed above
+        // Find element under finger
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const targetRow = el && el.closest('.row:not(.add-row)');
+        const targetAddRow = el && el.closest('.add-row');
+
+        if (targetRow && targetRow.dataset.id && targetRow.dataset.id !== fromId) {
+          const tRect = targetRow.getBoundingClientRect();
+          reorder(fromId, targetRow.dataset.id, touch.clientY > tRect.top + tRect.height / 2);
+        } else if (targetAddRow) {
+          const order = state.layouts[state.current];
+          const fromIdx = order.indexOf(fromId);
+          if (fromIdx !== -1) {
+            order.splice(fromIdx, 1);
+            order.push(fromId);
+            save();
+            removeDropIndicator();
+            render();
+          }
+        } else {
+          removeDropIndicator();
+        }
+      });
+
+      row.appendChild(handle);
+      row.appendChild(cb);
+      row.appendChild(input);
+      row.appendChild(del);
+      return row;
+    }
+
+    function createAddRow() {
+      const row = document.createElement('div');
+      row.className = 'row add-row';
+
+      // Spacer to align with text inputs (handle width + checkbox width + gaps)
+      const spacer = document.createElement('div');
+      spacer.style.cssText = 'width: 40px; flex-shrink: 0;';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Add a line';
+
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitAdd(input.value.trim());
+        }
+      });
+      input.addEventListener('blur', () => {
+        if (input.value.trim()) commitAdd(input.value.trim());
+      });
+
+      // Allow drop onto add-row (append to end)
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (!dragId) return;
+        showDropIndicator(row, false); // show above add-row
+      });
+
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!dragId) return;
+        const order = state.layouts[state.current];
+        const fromIdx = order.indexOf(dragId);
+        if (fromIdx === -1) return;
+        order.splice(fromIdx, 1);
+        order.push(dragId);
+        save();
+        removeDropIndicator();
+        render();
+      });
+
+      row.appendChild(spacer);
+      row.appendChild(input);
+      return row;
+    }
+
+    function commitAdd(text) {
+      if (!text) return;
+      const id = genId();
+      state.items[id] = { text, checked: false };
+      state.layouts.A.push(id);
+      state.layouts.B.push(id);
+      save();
+
+      const addRow = list.querySelector('.add-row');
+      addRow.querySelector('input').value = '';
+      const newRow = createRow(id);
+      list.insertBefore(newRow, addRow);
+      newRow.querySelector('input[type="text"]').focus();
+    }
+
+    // ── Drag helpers ──────────────────────────────────────────────────────────
+
+    function isCursorAfterMidpoint(e, el) {
+      const rect = el.getBoundingClientRect();
+      return e.clientY > rect.top + rect.height / 2;
+    }
+
+    function showDropIndicator(targetRow, after) {
+      removeDropIndicator();
+      dropIndicatorEl = document.createElement('div');
+      dropIndicatorEl.className = 'drop-indicator';
+      if (after) {
+        targetRow.after(dropIndicatorEl);
+      } else {
+        targetRow.before(dropIndicatorEl);
+      }
+    }
+
+    function removeDropIndicator() {
+      if (dropIndicatorEl) { dropIndicatorEl.remove(); dropIndicatorEl = null; }
+    }
+
+    function reorder(fromId, toId, after) {
+      const order = state.layouts[state.current];
+      const fromIdx = order.indexOf(fromId);
+      if (fromIdx === -1) return;
+      order.splice(fromIdx, 1);
+      const toIdx = order.indexOf(toId);
+      order.splice(after ? toIdx + 1 : toIdx, 0, fromId);
+      save();
+      removeDropIndicator();
+      render();
+    }
+
+    // ── Title editing ─────────────────────────────────────────────────────────
+
+    function initTitleEdit(h1) {
+      h1.addEventListener('click', function () {
+        const input = document.createElement('input');
+        input.className = 'title-input';
+        input.value = state.title;
+        h1.replaceWith(input);
+        input.select();
+
+        function commit() {
+          const val = input.value.trim() || 'My Checklist';
+          state.title = val;
+          save();
+          const newH1 = document.createElement('h1');
+          newH1.textContent = val;
+          input.replaceWith(newH1);
+          initTitleEdit(newH1);
+        }
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+          if (e.key === 'Escape') { input.value = state.title; input.blur(); }
+        });
+      });
+    }
+
+    // ── Layout tabs ───────────────────────────────────────────────────────────
+
+    document.querySelectorAll('.layout-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.layout === state.current) return;
+        state.current = btn.dataset.layout;
+        save();
+        render();
+      });
+
+      btn.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        const layout = btn.dataset.layout;
+        const input = document.createElement('input');
+        input.className = 'tab-name-input';
+        input.value = state.layoutNames[layout];
+        btn.replaceWith(input);
+        input.select();
+
+        function commit() {
+          const val = input.value.trim() || (layout === 'A' ? 'Layout A' : 'Layout B');
+          state.layoutNames[layout] = val;
+          save();
+          input.replaceWith(btn);
+          btn.textContent = val;
+        }
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+          if (e.key === 'Escape') { input.value = state.layoutNames[layout]; input.blur(); }
+        });
+      });
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+
+    loadState();
+    list.appendChild(createAddRow());
+    render();
+    initTitleEdit(document.querySelector('h1'));
+
+    // ── PWA: Service Worker registration ─────────────────────────────────────
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          console.warn('SW registration failed:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
