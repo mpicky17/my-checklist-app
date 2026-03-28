@@ -10,6 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="My Checklist" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
   <meta name="theme-color" content="#4f46e5" />
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -217,6 +221,18 @@
       }
     }
 
+    .sync-status {
+      font-size: 0.75rem;
+      color: #aaa;
+      text-align: right;
+      padding: 0 0 12px;
+      min-height: 20px;
+    }
+    .sync-status a { color: #4f46e5; text-decoration: none; }
+    .sync-status a:hover { text-decoration: underline; }
+    .sync-status.ok    { color: #16a34a; }
+    .sync-status.error { color: #ef4444; }
+
     .touch-ghost {
       position: fixed;
       pointer-events: none;
@@ -238,6 +254,7 @@
         <button class="layout-tab" data-layout="B">Layout B</button>
       </div>
     </div>
+    <div id="sync-status" class="sync-status"></div>
     <div id="list"></div>
   </div>
 
@@ -264,6 +281,7 @@
 
     function save() {
       localStorage.setItem('checklist-v2', JSON.stringify(state));
+      fbPush();
     }
 
     function loadState() {
@@ -651,6 +669,110 @@
     list.appendChild(createAddRow());
     render();
     initTitleEdit(document.querySelector('h1'));
+
+    // ── Firebase cloud backup ─────────────────────────────────────────────────
+    //
+    // SETUP (one-time):
+    //  1. Go to console.firebase.google.com → create a project
+    //  2. Add a web app → copy the 5 config values below
+    //  3. Enable Realtime Database → start in test mode, then paste these rules
+    //     in Database → Rules:
+    //       { "rules": { "users": { "$uid": {
+    //           ".read": "$uid === auth.uid",
+    //           ".write": "$uid === auth.uid"
+    //       }}}}
+    //  4. Enable Authentication → Sign-in method → Google
+    //  5. Authentication → Settings → Authorized domains → add your GitHub Pages
+    //     domain (e.g. yourusername.github.io)
+
+    const FIREBASE_CONFIG = {
+      apiKey:      'AIzaSyCxpdBVsnu8umQXT_NdDAGv7OmgsRPl2Nc',
+      authDomain:  'my-checklist-app-a0b5e.firebaseapp.com',
+      databaseURL: 'https://my-checklist-app-a0b5e-default-rtdb.firebaseio.com',
+      projectId:   'my-checklist-app-a0b5e',
+      appId:       '1:531099472671:web:ab5d1ec956b48a02e0d62a'
+    };
+
+    const FIREBASE_ENABLED = FIREBASE_CONFIG.apiKey !== 'REPLACE_WITH_YOUR_API_KEY';
+
+    const syncEl = document.getElementById('sync-status');
+    let syncTimer = null;
+
+    function setSyncStatus(msg, cls) {
+      clearTimeout(syncTimer);
+      syncEl.innerHTML = msg;
+      syncEl.className = 'sync-status' + (cls ? ' ' + cls : '');
+      if (cls === 'ok') syncTimer = setTimeout(() => {
+        syncEl.textContent = '';
+        syncEl.className = 'sync-status';
+      }, 3000);
+    }
+
+    function fbPush() {}  // replaced below if Firebase is enabled
+
+    if (FIREBASE_ENABLED) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      const fbAuth = firebase.auth();
+      const fbDb   = firebase.database();
+      let   fbUid  = null;
+
+      fbPush = function () {
+        if (!fbUid) return;
+        fbDb.ref('users/' + fbUid + '/checklist')
+          .set(state)
+          .then(() => setSyncStatus('Synced', 'ok'))
+          .catch(() => setSyncStatus('Sync failed \u2014 saved locally', 'error'));
+      };
+
+      fbAuth.onAuthStateChanged(user => {
+        if (user) {
+          fbUid = user.uid;
+
+          // Restore from cloud if localStorage was evicted by iOS
+          if (!localStorage.getItem('checklist-v2')) {
+            setSyncStatus('Restoring from cloud\u2026');
+            fbDb.ref('users/' + fbUid + '/checklist').once('value').then(snap => {
+              if (snap.exists()) {
+                state = snap.val();
+                localStorage.setItem('checklist-v2', JSON.stringify(state));
+                render();
+                setSyncStatus('Restored from cloud', 'ok');
+              } else {
+                setSyncStatus('');
+              }
+            }).catch(() => setSyncStatus('Could not reach cloud', 'error'));
+          } else {
+            setSyncStatus('');
+          }
+        } else {
+          fbUid = null;
+          setSyncStatus('<a href="#" id="signin-link">Sign in with Google</a> to back up your checklist');
+          document.getElementById('signin-link').addEventListener('click', e => {
+            e.preventDefault();
+            const provider = new firebase.auth.GoogleAuthProvider();
+            // Use redirect in standalone/PWA mode (iOS blocks popups there)
+            const isStandalone = window.navigator.standalone ||
+                                 window.matchMedia('(display-mode: standalone)').matches;
+            if (isStandalone) {
+              fbAuth.signInWithRedirect(provider);
+            } else {
+              fbAuth.signInWithPopup(provider)
+                .catch(err => setSyncStatus('Sign-in failed: ' + err.message, 'error'));
+            }
+          });
+        }
+      });
+
+      // Catch any error coming back from a Google redirect sign-in
+      fbAuth.getRedirectResult().catch(err => {
+        if (err && err.code !== 'auth/no-auth-event') {
+          setSyncStatus('Sign-in failed: ' + err.message, 'error');
+        }
+      });
+
+    } else {
+      setSyncStatus('Add Firebase config to enable cloud backup');
+    }
 
     // ── PWA: Service Worker registration ─────────────────────────────────────
     if ('serviceWorker' in navigator) {
