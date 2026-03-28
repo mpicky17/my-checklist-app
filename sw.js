@@ -2,7 +2,7 @@
 // Cache-first strategy: serve from cache, fall back to network.
 // To force a cache refresh after updating the app, bump CACHE_NAME to 'my-checklist-v2'.
 
-const CACHE_NAME = 'my-checklist-v2';
+const CACHE_NAME = 'my-checklist-v3';
 
 const ASSETS_TO_CACHE = [
   './',

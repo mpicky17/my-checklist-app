@@ -750,15 +750,10 @@
           document.getElementById('signin-link').addEventListener('click', e => {
             e.preventDefault();
             const provider = new firebase.auth.GoogleAuthProvider();
-            // Use redirect in standalone/PWA mode (iOS blocks popups there)
-            const isStandalone = window.navigator.standalone ||
-                                 window.matchMedia('(display-mode: standalone)').matches;
-            if (isStandalone) {
-              fbAuth.signInWithRedirect(provider);
-            } else {
-              fbAuth.signInWithPopup(provider)
-                .catch(err => setSyncStatus('Sign-in failed: ' + err.message, 'error'));
-            }
+            // Always use popup — signInWithRedirect breaks in iOS standalone PWA mode
+            // because iOS opens the redirect in Safari instead of returning to the PWA.
+            fbAuth.signInWithPopup(provider)
+              .catch(err => setSyncStatus('Sign-in failed: ' + err.message, 'error'));
           });
         }
       });
