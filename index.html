@@ -233,6 +233,21 @@
     .sync-status.ok    { color: #16a34a; }
     .sync-status.error { color: #ef4444; }
 
+    /* TEMPORARY TEST BUTTON — remove after confirming restore works */
+    #reset-btn {
+      display: block;
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 8px;
+      background: #fef2f2;
+      color: #ef4444;
+      border: 1px dashed #ef4444;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
     .touch-ghost {
       position: fixed;
       pointer-events: none;
@@ -255,6 +270,10 @@
       </div>
     </div>
     <div id="sync-status" class="sync-status"></div>
+    <!-- TEMPORARY TEST BUTTON — remove after confirming restore works -->
+    <button id="reset-btn" onclick="localStorage.removeItem('checklist-v2'); location.reload();">
+      ⚠ Clear local data (test restore)
+    </button>
     <div id="list"></div>
   </div>
 
