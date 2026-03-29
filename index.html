@@ -276,6 +276,66 @@
       padding: 5px 8px;
     }
 
+    .hide-checked-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0 10px;
+      border-bottom: 1px solid #f0f0f0;
+      margin-bottom: 2px;
+    }
+
+    .hide-checked-label {
+      font-size: 0.875rem;
+      color: #1a1a1a;
+      user-select: none;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #ef4444;
+      border-radius: 12px;
+      transition: background 0.2s;
+    }
+
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+
+    .toggle-switch input:checked + .toggle-track {
+      background: #16a34a;
+    }
+
+    .toggle-switch input:checked + .toggle-track::after {
+      transform: translateX(20px);
+    }
+
     @media (prefers-color-scheme: dark) {
       body                          { background: #000; }
       .card                         { background: #1c1c1e; box-shadow: 0 2px 16px rgba(0,0,0,0.5); }
@@ -304,6 +364,8 @@
       .sync-status.ok               { color: #30d158; }
       .sync-status.error            { color: #ff453a; }
       .touch-ghost                  { background: #1c1c1e; }
+      .hide-checked-bar             { border-bottom-color: #2c2c2e; }
+      .hide-checked-label           { color: #f2f2f7; }
     }
   </style>
 </head>
@@ -324,7 +386,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v10';
+    const APP_VERSION = 'my-checklist-v11';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -333,7 +395,8 @@
       layouts: { A: [], B: [] },
       current: 'A',
       title: 'My Checklist',
-      layoutNames: { A: 'Layout A', B: 'Layout B' }
+      layoutNames: { A: 'Layout A', B: 'Layout B' },
+      hideChecked: { A: false, B: false }
     };
 
     const list = document.getElementById('list');
@@ -359,6 +422,7 @@
         // Merge so new fields get defaults if missing
         state = Object.assign(state, parsed);
         state.layoutNames = Object.assign({ A: 'Layout A', B: 'Layout B' }, parsed.layoutNames);
+        state.hideChecked = Object.assign({ A: false, B: false }, parsed.hideChecked);
       } else {
         // Migrate from old format if present
         const old = localStorage.getItem('checklist');
@@ -396,15 +460,18 @@
         btn.textContent = state.layoutNames[btn.dataset.layout];
       });
 
-      // Remove all content rows, keep add-row
-      [...list.querySelectorAll('.row:not(.add-row)')].forEach(r => r.remove());
+      // Remove all content rows and the toggle bar, keep add-row
+      [...list.querySelectorAll('.row:not(.add-row), .hide-checked-bar')].forEach(r => r.remove());
       removeDropIndicator();
 
       const addRow = list.querySelector('.add-row');
+
+      list.insertBefore(createHideCheckedBar(), addRow);
+
       state.layouts[state.current].forEach(id => {
-        if (state.items[id]) {
-          list.insertBefore(createRow(id), addRow);
-        }
+        if (!state.items[id]) return;
+        if (state.hideChecked[state.current] && state.items[id].checked) return;
+        list.insertBefore(createRow(id), addRow);
       });
       list.querySelectorAll('.row:not(.add-row) textarea').forEach(autoResizeTextarea);
     }
@@ -430,6 +497,7 @@
         state.items[id].checked = cb.checked;
         row.classList.toggle('checked', cb.checked);
         save();
+        if (state.hideChecked[state.current] && cb.checked) row.remove();
       });
 
       // Text input (textarea for multi-line wrapping)
@@ -657,6 +725,36 @@
       newRow.dataset.new = '1';
       afterRow.after(newRow);
       newRow.querySelector('textarea').focus();
+    }
+
+    function createHideCheckedBar() {
+      const bar = document.createElement('div');
+      bar.className = 'hide-checked-bar';
+
+      const label = document.createElement('span');
+      label.className = 'hide-checked-label';
+      label.textContent = 'Hide Checked';
+
+      const sw = document.createElement('label');
+      sw.className = 'toggle-switch';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = state.hideChecked[state.current];
+      cb.addEventListener('change', () => {
+        state.hideChecked[state.current] = cb.checked;
+        save();
+        render();
+      });
+
+      const track = document.createElement('span');
+      track.className = 'toggle-track';
+
+      sw.appendChild(cb);
+      sw.appendChild(track);
+      bar.appendChild(label);
+      bar.appendChild(sw);
+      return bar;
     }
 
     function commitAdd(text) {
