@@ -274,7 +274,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v6';
+    const APP_VERSION = 'my-checklist-v7';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -382,12 +382,22 @@
       input.value = item.text;
       input.addEventListener('input', () => {
         state.items[id].text = input.value;
+        if (input.value) delete row.dataset.new;
         save();
       });
       input.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          list.querySelector('.add-row input').focus();
+          insertRowAfter(id);
+        }
+      });
+      input.addEventListener('blur', () => {
+        if (row.dataset.new && !state.items[id].text) {
+          delete state.items[id];
+          state.layouts.A = state.layouts.A.filter(x => x !== id);
+          state.layouts.B = state.layouts.B.filter(x => x !== id);
+          save();
+          row.remove();
         }
       });
 
@@ -461,6 +471,7 @@
         // Move ghost with finger
         const rect = touchGhost.getBoundingClientRect();
         touchGhost.style.top = (touch.clientY - rect.height / 2) + 'px';
+        window.scrollBy(0, getDragScrollSpeed(touch.clientY));
 
         // Find element under finger (hide ghost so it doesn't block hit-test)
         touchGhost.style.display = 'none';
@@ -569,6 +580,25 @@
       return row;
     }
 
+    function insertRowAfter(afterId) {
+      const id = genId();
+      state.items[id] = { text: '', checked: false };
+
+      const current = state.layouts[state.current];
+      current.splice(current.indexOf(afterId) + 1, 0, id);
+
+      const other = state.current === 'A' ? 'B' : 'A';
+      state.layouts[other].push(id);
+
+      save();
+
+      const afterRow = list.querySelector(`.row[data-id="${afterId}"]`);
+      const newRow = createRow(id);
+      newRow.dataset.new = '1';
+      afterRow.after(newRow);
+      newRow.querySelector('input[type="text"]').focus();
+    }
+
     function commitAdd(text) {
       if (!text) return;
       const id = genId();
@@ -585,6 +615,18 @@
     }
 
     // ── Drag helpers ──────────────────────────────────────────────────────────
+
+    const SCROLL_ZONE  = 80; // px from viewport edge to begin auto-scroll
+    const SCROLL_SPEED = 10; // max px per event tick
+
+    function getDragScrollSpeed(clientY) {
+      const vh = window.innerHeight;
+      if (clientY < SCROLL_ZONE)
+        return -Math.round(SCROLL_SPEED * (1 - clientY / SCROLL_ZONE));
+      if (clientY > vh - SCROLL_ZONE)
+        return Math.round(SCROLL_SPEED * (1 - (vh - clientY) / SCROLL_ZONE));
+      return 0;
+    }
 
     function isCursorAfterMidpoint(e, el) {
       const rect = el.getBoundingClientRect();
@@ -645,6 +687,14 @@
         });
       });
     }
+
+    // ── Mouse drag auto-scroll ────────────────────────────────────────────────
+
+    document.addEventListener('dragover', e => {
+      if (!dragId) return;
+      const speed = getDragScrollSpeed(e.clientY);
+      if (speed !== 0) window.scrollBy(0, speed);
+    });
 
     // ── Layout tabs ───────────────────────────────────────────────────────────
 
