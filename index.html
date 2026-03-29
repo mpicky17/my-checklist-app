@@ -88,6 +88,7 @@
       cursor: pointer;
       color: #888;
       transition: background 0.15s, color 0.15s;
+      touch-action: manipulation;
     }
 
     .layout-tab.active {
@@ -159,6 +160,7 @@
       cursor: pointer;
       accent-color: #4f46e5;
       flex-shrink: 0;
+      touch-action: manipulation;
     }
 
     .row input[type="text"],
@@ -173,6 +175,7 @@
       border-radius: 4px;
       transition: background 0.15s;
       font-family: inherit;
+      touch-action: manipulation;
     }
 
     .row input[type="text"]:focus,
@@ -211,6 +214,7 @@
       transition: color 0.15s, background 0.15s;
       flex-shrink: 0;
       visibility: hidden;
+      touch-action: manipulation;
     }
 
     .row:hover .delete-btn {
@@ -291,6 +295,7 @@
       height: 24px;
       cursor: pointer;
       flex-shrink: 0;
+      touch-action: manipulation;
     }
 
     .toggle-switch input {
@@ -379,7 +384,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v13';
+    const APP_VERSION = 'my-checklist-v14';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
