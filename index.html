@@ -365,6 +365,44 @@
       .touch-ghost                  { background: #1c1c1e; }
       .hide-checked-bar             { border-bottom-color: #2c2c2e; }
       .hide-checked-label           { color: #f2f2f7; }
+      .conflict-dialog              { background: #1c1c1e; }
+      .conflict-dialog h3           { color: #f2f2f7; }
+      .conflict-dialog p            { color: #aeaeb2; }
+      .conflict-dialog .btn-keep    { background: #1c1c1e; color: #818cf8; border-color: #818cf8; }
+    }
+
+    .conflict-dialog-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2000; padding: 16px;
+    }
+
+    .conflict-dialog {
+      background: #fff; border-radius: 12px; padding: 24px;
+      max-width: 320px; width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .conflict-dialog h3 {
+      font-size: 1rem; font-weight: 600; margin-bottom: 8px; color: #1a1a1a;
+    }
+
+    .conflict-dialog p {
+      font-size: 0.875rem; color: #555; margin-bottom: 20px;
+    }
+
+    .conflict-dialog .btn-row { display: flex; gap: 10px; }
+
+    .conflict-dialog .btn-keep {
+      flex: 1; padding: 10px; border: 1.5px solid #4f46e5;
+      background: #fff; color: #4f46e5; border-radius: 8px;
+      font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+
+    .conflict-dialog .btn-use {
+      flex: 1; padding: 10px; border: none;
+      background: #4f46e5; color: #fff; border-radius: 8px;
+      font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit;
     }
   </style>
 </head>
@@ -385,18 +423,27 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v16';
+    const APP_VERSION = 'my-checklist-v17';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
     let state = {
-      items: {},          // { [id]: { text, checked } }
+      items: {},          // { [id]: { text, checked, updatedAt, deleted } }
       layouts: { A: [], B: [] },
       current: 'A',
       title: 'My Checklist',
       layoutNames: { A: 'Layout A', B: 'Layout B' },
-      hideChecked: { A: false, B: false }
+      hideChecked: { A: false, B: false },  // local-only, not synced
+      layoutUpdatedAt: { A: 0, B: 0 }
     };
+
+    // Tracks the last layout order successfully synced, used for conflict detection
+    let lastSyncedLayoutOrder = { A: [], B: [] };
+
+    // No-ops replaced by real implementations once Firebase is initialized
+    let fbSyncItem   = function() {};
+    let fbSyncLayout = function() {};
+    let fbSyncMeta   = function() {};
 
     const list = document.getElementById('list');
     let dragId = null;
@@ -411,7 +458,6 @@
 
     function save() {
       localStorage.setItem('checklist-v2', JSON.stringify(state));
-      fbPush();
     }
 
     function loadState() {
@@ -420,8 +466,15 @@
         const parsed = JSON.parse(saved);
         // Merge so new fields get defaults if missing
         state = Object.assign(state, parsed);
-        state.layoutNames = Object.assign({ A: 'Layout A', B: 'Layout B' }, parsed.layoutNames);
-        state.hideChecked = Object.assign({ A: false, B: false }, parsed.hideChecked);
+        state.layoutNames     = Object.assign({ A: 'Layout A', B: 'Layout B' }, parsed.layoutNames);
+        state.hideChecked     = Object.assign({ A: false, B: false }, parsed.hideChecked);
+        state.layoutUpdatedAt = Object.assign({ A: 0, B: 0 }, parsed.layoutUpdatedAt);
+        // Migrate existing items to new model
+        Object.keys(state.items).forEach(id => {
+          if (!state.items[id].updatedAt) state.items[id].updatedAt = 0;
+          if (state.items[id].deleted === undefined) state.items[id].deleted = false;
+        });
+        lastSyncedLayoutOrder = { A: [...state.layouts.A], B: [...state.layouts.B] };
       } else {
         // Migrate from old format if present
         const old = localStorage.getItem('checklist');
@@ -429,7 +482,7 @@
           const rows = JSON.parse(old);
           rows.forEach(({ text, checked }) => {
             const id = genId();
-            state.items[id] = { text, checked };
+            state.items[id] = { text, checked, updatedAt: 0, deleted: false };
             state.layouts.A.push(id);
             state.layouts.B.push(id);
           });
@@ -469,6 +522,7 @@
 
       state.layouts[state.current].forEach(id => {
         if (!state.items[id]) return;
+        if (state.items[id].deleted) return;
         if (state.hideChecked[state.current] && state.items[id].checked) return;
         list.insertBefore(createRow(id), addRow);
       });
@@ -495,8 +549,10 @@
 
       function applyCheckState() {
         state.items[id].checked = cb.checked;
+        state.items[id].updatedAt = Date.now();
         row.classList.toggle('checked', cb.checked);
         save();
+        fbSyncItem(id);
         if (state.hideChecked[state.current] && cb.checked) row.remove();
       }
       // Use touchend on iOS to bypass the synthesized-click delay in standalone PWA mode.
@@ -516,8 +572,10 @@
       input.addEventListener('touchend', () => { input.focus(); });
       input.addEventListener('input', () => {
         state.items[id].text = input.value;
+        state.items[id].updatedAt = Date.now();
         if (input.value) delete row.dataset.new;
         save();
+        fbSyncItem(id);
         autoResizeTextarea(input);
       });
       input.addEventListener('keydown', e => {
@@ -545,10 +603,10 @@
       del.title = 'Delete row';
       del.textContent = '×';
       del.addEventListener('click', () => {
-        delete state.items[id];
-        state.layouts.A = state.layouts.A.filter(x => x !== id);
-        state.layouts.B = state.layouts.B.filter(x => x !== id);
+        state.items[id].deleted = true;
+        state.items[id].updatedAt = Date.now();
         save();
+        fbSyncItem(id);
         row.remove();
       });
 
@@ -656,6 +714,7 @@
             order.splice(fromIdx, 1);
             order.push(fromId);
             save();
+            fbSyncLayout(state.current);
             removeDropIndicator();
             render();
           }
@@ -709,6 +768,7 @@
         order.splice(fromIdx, 1);
         order.push(dragId);
         save();
+        fbSyncLayout(state.current);
         removeDropIndicator();
         render();
       });
@@ -720,7 +780,7 @@
 
     function insertRowAfter(afterId) {
       const id = genId();
-      state.items[id] = { text: '', checked: false };
+      state.items[id] = { text: '', checked: false, updatedAt: Date.now(), deleted: false };
 
       const current = state.layouts[state.current];
       current.splice(current.indexOf(afterId) + 1, 0, id);
@@ -729,6 +789,9 @@
       state.layouts[other].push(id);
 
       save();
+      fbSyncItem(id);
+      fbSyncLayout(state.current);
+      fbSyncLayout(other);
 
       const afterRow = list.querySelector(`.row[data-id="${afterId}"]`);
       const newRow = createRow(id);
@@ -770,10 +833,13 @@
     function commitAdd(text) {
       if (!text) return;
       const id = genId();
-      state.items[id] = { text, checked: false };
+      state.items[id] = { text, checked: false, updatedAt: Date.now(), deleted: false };
       state.layouts.A.push(id);
       state.layouts.B.push(id);
       save();
+      fbSyncItem(id);
+      fbSyncLayout('A');
+      fbSyncLayout('B');
 
       const addRow = list.querySelector('.add-row');
       addRow.querySelector('input').value = '';
@@ -824,6 +890,7 @@
       const toIdx = order.indexOf(toId);
       order.splice(after ? toIdx + 1 : toIdx, 0, fromId);
       save();
+      fbSyncLayout(state.current);
       removeDropIndicator();
       render();
     }
@@ -842,6 +909,7 @@
           const val = input.value.trim() || 'My Checklist';
           state.title = val;
           save();
+          fbSyncMeta();
           const newH1 = document.createElement('h1');
           newH1.textContent = val;
           input.replaceWith(newH1);
@@ -887,6 +955,7 @@
           const val = input.value.trim() || (layout === 'A' ? 'Layout A' : 'Layout B');
           state.layoutNames[layout] = val;
           save();
+          fbSyncMeta();
           input.replaceWith(btn);
           btn.textContent = val;
         }
@@ -906,7 +975,7 @@
     render();
     initTitleEdit(document.querySelector('h1'));
 
-    // ── Firebase cloud backup ─────────────────────────────────────────────────
+    // ── Firebase real-time sync ───────────────────────────────────────────────
     //
     // SETUP (one-time):
     //  1. Go to console.firebase.google.com → create a project
@@ -944,43 +1013,194 @@
       }, 3000);
     }
 
-    function fbPush() {}  // replaced below if Firebase is enabled
+    // ── Conflict dialog for simultaneous layout reordering ────────────────────
+
+    function showLayoutConflictDialog(layoutId, remoteOrder, remoteTs) {
+      // Only show one dialog at a time; apply remote silently if a dialog is already open
+      if (document.getElementById('conflict-dialog')) {
+        state.layouts[layoutId] = remoteOrder;
+        state.layoutUpdatedAt[layoutId] = remoteTs;
+        lastSyncedLayoutOrder[layoutId] = [...remoteOrder];
+        localStorage.setItem('checklist-v2', JSON.stringify(state));
+        render();
+        return;
+      }
+
+      const layoutName = state.layoutNames[layoutId] || ('Layout ' + layoutId);
+
+      const overlay = document.createElement('div');
+      overlay.id = 'conflict-dialog';
+      overlay.className = 'conflict-dialog-overlay';
+
+      const dialog = document.createElement('div');
+      dialog.className = 'conflict-dialog';
+      dialog.innerHTML =
+        '<h3>Layout conflict</h3>' +
+        '<p><strong>' + layoutName + '</strong> was rearranged on another device. ' +
+        'Keep your order or use theirs?</p>' +
+        '<div class="btn-row">' +
+        '<button class="btn-keep">Keep Mine</button>' +
+        '<button class="btn-use">Use Theirs</button>' +
+        '</div>';
+
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
+      dialog.querySelector('.btn-keep').addEventListener('click', () => {
+        overlay.remove();
+        fbSyncLayout(layoutId);
+      });
+
+      dialog.querySelector('.btn-use').addEventListener('click', () => {
+        state.layouts[layoutId] = remoteOrder;
+        state.layoutUpdatedAt[layoutId] = remoteTs;
+        lastSyncedLayoutOrder[layoutId] = [...remoteOrder];
+        overlay.remove();
+        localStorage.setItem('checklist-v2', JSON.stringify(state));
+        render();
+      });
+    }
+
+    // ── Merge incoming remote state ───────────────────────────────────────────
+
+    function mergeRemoteState(remote) {
+      if (!remote) return;
+      let changed = false;
+
+      // Items: per-item last-write-wins by timestamp
+      if (remote.items) {
+        Object.entries(remote.items).forEach(([id, remoteItem]) => {
+          const local = state.items[id];
+          if (!local || (remoteItem.updatedAt || 0) > (local.updatedAt || 0)) {
+            state.items[id] = remoteItem;
+            changed = true;
+          }
+        });
+      }
+
+      // Layout order: conflict dialog if both sides changed since last sync
+      if (remote.layouts) {
+        Object.keys(remote.layouts).forEach(layoutId => {
+          const remoteOrder = remote.layouts[layoutId];
+          const remoteTs = (remote.layoutUpdatedAt || {})[layoutId] || 0;
+          const localTs  = state.layoutUpdatedAt[layoutId] || 0;
+
+          if (remoteTs > localTs) {
+            const synced       = lastSyncedLayoutOrder[layoutId] || [];
+            const localChanged = JSON.stringify(state.layouts[layoutId]) !== JSON.stringify(synced);
+
+            if (localChanged && synced.length > 0) {
+              showLayoutConflictDialog(layoutId, remoteOrder, remoteTs);
+            } else {
+              state.layouts[layoutId] = remoteOrder;
+              state.layoutUpdatedAt[layoutId] = remoteTs;
+              lastSyncedLayoutOrder[layoutId] = [...remoteOrder];
+              changed = true;
+            }
+          }
+        });
+      }
+
+      // Meta: last-write-wins (skip if unchanged to avoid re-render loops)
+      if (remote.layoutNames) {
+        Object.keys(remote.layoutNames).forEach(k => {
+          if (remote.layoutNames[k] !== state.layoutNames[k]) {
+            state.layoutNames[k] = remote.layoutNames[k];
+            changed = true;
+          }
+        });
+      }
+      if (remote.title && remote.title !== state.title) {
+        state.title = remote.title;
+        changed = true;
+      }
+
+      if (changed) {
+        localStorage.setItem('checklist-v2', JSON.stringify(state));
+        render();
+      }
+    }
 
     if (FIREBASE_ENABLED) {
       firebase.initializeApp(FIREBASE_CONFIG);
       const fbAuth = firebase.auth();
       const fbDb   = firebase.database();
       let   fbUid  = null;
+      let   fbListener = null;
 
-      fbPush = function () {
-        if (!fbUid) return;
-        fbDb.ref('users/' + fbUid + '/checklist')
-          .set(state)
+      fbSyncItem = function(id) {
+        if (!fbUid || !state.items[id]) return;
+        fbDb.ref('users/' + fbUid + '/checklist/items/' + id)
+          .set(state.items[id])
           .then(() => setSyncStatus('Synced', 'ok'))
           .catch(() => setSyncStatus('Sync failed \u2014 saved locally', 'error'));
       };
+
+      fbSyncLayout = function(layoutId) {
+        if (!fbUid) return;
+        const now = Date.now();
+        state.layoutUpdatedAt[layoutId] = now;
+        lastSyncedLayoutOrder[layoutId] = [...state.layouts[layoutId]];
+        localStorage.setItem('checklist-v2', JSON.stringify(state));
+        fbDb.ref('users/' + fbUid + '/checklist/layouts/' + layoutId).set(state.layouts[layoutId]);
+        fbDb.ref('users/' + fbUid + '/checklist/layoutUpdatedAt/' + layoutId).set(now)
+          .then(() => setSyncStatus('Synced', 'ok'))
+          .catch(() => setSyncStatus('Sync failed \u2014 saved locally', 'error'));
+      };
+
+      fbSyncMeta = function() {
+        if (!fbUid) return;
+        fbDb.ref('users/' + fbUid + '/checklist/title').set(state.title);
+        fbDb.ref('users/' + fbUid + '/checklist/layoutNames').set(state.layoutNames)
+          .then(() => setSyncStatus('Synced', 'ok'))
+          .catch(() => setSyncStatus('Sync failed \u2014 saved locally', 'error'));
+      };
+
+      function startListener() {
+        if (fbListener) return;
+        fbListener = fbDb.ref('users/' + fbUid + '/checklist').on('value', snap => {
+          if (snap.exists()) mergeRemoteState(snap.val());
+        });
+      }
 
       fbAuth.onAuthStateChanged(user => {
         if (user) {
           fbUid = user.uid;
 
-          // Restore from cloud if localStorage was evicted by iOS
           if (!localStorage.getItem('checklist-v2')) {
+            // Restore from cloud if localStorage was evicted (e.g. iOS PWA)
             setSyncStatus('Restoring from cloud\u2026');
             fbDb.ref('users/' + fbUid + '/checklist').once('value').then(snap => {
               if (snap.exists()) {
-                state = snap.val();
+                const remote = snap.val();
+                state = Object.assign(state, remote);
+                state.hideChecked     = Object.assign({ A: false, B: false }, remote.hideChecked);
+                state.layoutUpdatedAt = Object.assign({ A: 0, B: 0 }, remote.layoutUpdatedAt);
+                Object.keys(state.items || {}).forEach(id => {
+                  state.items[id].updatedAt = state.items[id].updatedAt || 0;
+                  state.items[id].deleted   = state.items[id].deleted   || false;
+                });
+                lastSyncedLayoutOrder = {
+                  A: [...(state.layouts.A || [])],
+                  B: [...(state.layouts.B || [])]
+                };
                 localStorage.setItem('checklist-v2', JSON.stringify(state));
                 render();
                 setSyncStatus('Restored from cloud', 'ok');
               } else {
                 setSyncStatus('');
               }
+              startListener();
             }).catch(() => setSyncStatus('Could not reach cloud', 'error'));
           } else {
             setSyncStatus('');
+            startListener();
           }
         } else {
+          if (fbListener && fbUid) {
+            fbDb.ref('users/' + fbUid + '/checklist').off('value', fbListener);
+            fbListener = null;
+          }
           fbUid = null;
           setSyncStatus('<a href="#" id="signin-link">Sign in with Google</a> to back up your checklist');
           document.getElementById('signin-link').addEventListener('click', e => {
