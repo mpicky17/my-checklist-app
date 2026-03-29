@@ -111,11 +111,18 @@
 
     .row {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       padding: 5px 0;
       border-bottom: 1px solid #f0f0f0;
       position: relative;
+    }
+
+    /* Keep checkbox and drag handle vertically centred on the first line */
+    .row input[type="checkbox"],
+    .row .drag-handle,
+    .row .delete-btn {
+      margin-top: 7px;
     }
 
     .row:last-child {
@@ -161,7 +168,8 @@
       flex-shrink: 0;
     }
 
-    .row input[type="text"] {
+    .row input[type="text"],
+    .row textarea {
       flex: 1;
       border: none;
       outline: none;
@@ -171,19 +179,31 @@
       padding: 6px 4px;
       border-radius: 4px;
       transition: background 0.15s;
+      font-family: inherit;
     }
 
-    .row input[type="text"]:focus {
+    .row input[type="text"]:focus,
+    .row textarea:focus {
       background: #f5f3ff;
     }
 
-    .row input[type="text"]::placeholder {
+    .row input[type="text"]::placeholder,
+    .row textarea::placeholder {
       color: #aaa;
     }
 
-    .row.checked input[type="text"] {
+    .row.checked input[type="text"],
+    .row.checked textarea {
       color: #aaa;
       text-decoration: line-through;
+    }
+
+    .row textarea {
+      resize: none;
+      overflow: hidden;
+      min-height: 34px;
+      line-height: 1.5;
+      field-sizing: content; /* auto-size in Safari 17.4+/Chrome 123+ */
     }
 
     .delete-btn {
@@ -255,6 +275,36 @@
       opacity: 0.92;
       padding: 5px 8px;
     }
+
+    @media (prefers-color-scheme: dark) {
+      body                          { background: #000; }
+      .card                         { background: #1c1c1e; box-shadow: 0 2px 16px rgba(0,0,0,0.5); }
+      h1                            { color: #f2f2f7; }
+      h1:hover                      { background: #2c2c2e; }
+      .title-input                  { color: #f2f2f7; background: #2c2c2e; }
+      .layout-tabs                  { background: #2c2c2e; }
+      .layout-tab                   { color: #8e8e93; }
+      .layout-tab.active            { background: #3a3a3c; color: #f2f2f7; }
+      .tab-name-input               { color: #f2f2f7; background: #2c2c2e; }
+      .row                          { border-bottom-color: #2c2c2e; }
+      .drag-handle                  { color: #636366; }
+      .row input[type="text"],
+      .row textarea                 { color: #f2f2f7; }
+      .row input[type="text"]:focus,
+      .row textarea:focus           { background: #2c2c2e; }
+      .row input[type="text"]::placeholder,
+      .row textarea::placeholder    { color: #636366; }
+      .row.checked input[type="text"],
+      .row.checked textarea         { color: #636366; }
+      .delete-btn                   { color: #636366; }
+      .delete-btn:hover             { color: #ff453a; background: #2c1515; }
+      .app-version                  { color: #48484a; }
+      .sync-status                  { color: #636366; }
+      .sync-status a                { color: #818cf8; }
+      .sync-status.ok               { color: #30d158; }
+      .sync-status.error            { color: #ff453a; }
+      .touch-ghost                  { background: #1c1c1e; }
+    }
   </style>
 </head>
 <body>
@@ -274,7 +324,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v7';
+    const APP_VERSION = 'my-checklist-v8';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -328,6 +378,11 @@
       return '_' + Math.random().toString(36).substr(2, 9);
     }
 
+    function autoResizeTextarea(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
+
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     function render() {
@@ -351,6 +406,7 @@
           list.insertBefore(createRow(id), addRow);
         }
       });
+      list.querySelectorAll('.row:not(.add-row) textarea').forEach(autoResizeTextarea);
     }
 
     function createRow(id) {
@@ -376,14 +432,15 @@
         save();
       });
 
-      // Text input
-      const input = document.createElement('input');
-      input.type = 'text';
+      // Text input (textarea for multi-line wrapping)
+      const input = document.createElement('textarea');
+      input.rows = 1;
       input.value = item.text;
       input.addEventListener('input', () => {
         state.items[id].text = input.value;
         if (input.value) delete row.dataset.new;
         save();
+        autoResizeTextarea(input);
       });
       input.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
