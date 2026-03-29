@@ -423,7 +423,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v17';
+    const APP_VERSION = 'my-checklist-v18';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1085,7 +1085,8 @@
           const remoteTs = (remote.layoutUpdatedAt || {})[layoutId] || 0;
           const localTs  = state.layoutUpdatedAt[layoutId] || 0;
 
-          if (remoteTs > localTs) {
+          const localLayoutIsEmpty = (state.layouts[layoutId] || []).length === 0;
+          if (remoteTs > localTs || localLayoutIsEmpty) {
             const synced       = lastSyncedLayoutOrder[layoutId] || [];
             const localChanged = JSON.stringify(state.layouts[layoutId]) !== JSON.stringify(synced);
 
@@ -1167,8 +1168,8 @@
         if (user) {
           fbUid = user.uid;
 
-          if (!localStorage.getItem('checklist-v2')) {
-            // Restore from cloud if localStorage was evicted (e.g. iOS PWA)
+          if (Object.keys(state.items).length === 0) {
+            // Restore from cloud if this device has no items (fresh install or iOS localStorage eviction)
             setSyncStatus('Restoring from cloud\u2026');
             fbDb.ref('users/' + fbUid + '/checklist').once('value').then(snap => {
               if (snap.exists()) {
