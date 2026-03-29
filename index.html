@@ -379,7 +379,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v12';
+    const APP_VERSION = 'my-checklist-v13';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -474,13 +474,13 @@
       const row = document.createElement('div');
       row.className = 'row' + (item.checked ? ' checked' : '');
       row.dataset.id = id;
-      row.draggable = true;
 
       // Drag handle
       const handle = document.createElement('span');
       handle.className = 'drag-handle';
       handle.textContent = '⠿';
       handle.title = 'Drag to reorder';
+      handle.draggable = true;
 
       // Checkbox
       const cb = document.createElement('input');
@@ -537,13 +537,13 @@
 
       // ── Drag events ───────────────────────────────────────────────────────
 
-      row.addEventListener('dragstart', e => {
+      handle.addEventListener('dragstart', e => {
         dragId = id;
         e.dataTransfer.effectAllowed = 'move';
         setTimeout(() => row.classList.add('dragging'), 0);
       });
 
-      row.addEventListener('dragend', () => {
+      handle.addEventListener('dragend', () => {
         row.classList.remove('dragging');
         dragId = null;
         removeDropIndicator();
