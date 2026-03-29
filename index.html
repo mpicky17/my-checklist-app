@@ -111,18 +111,11 @@
 
     .row {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 10px;
       padding: 5px 0;
       border-bottom: 1px solid #f0f0f0;
       position: relative;
-    }
-
-    /* Keep checkbox and drag handle vertically centred on the first line */
-    .row input[type="checkbox"],
-    .row .drag-handle,
-    .row .delete-btn {
-      margin-top: 7px;
     }
 
     .row:last-child {
@@ -386,7 +379,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v11';
+    const APP_VERSION = 'my-checklist-v12';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
