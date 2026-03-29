@@ -384,7 +384,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v14';
+    const APP_VERSION = 'my-checklist-v15';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -491,17 +491,28 @@
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = item.checked;
-      cb.addEventListener('change', () => {
+
+      function applyCheckState() {
         state.items[id].checked = cb.checked;
         row.classList.toggle('checked', cb.checked);
         save();
         if (state.hideChecked[state.current] && cb.checked) row.remove();
+      }
+      // Use touchend on iOS to bypass the synthesized-click delay in standalone PWA mode.
+      // e.preventDefault() stops the redundant click/change from also firing.
+      cb.addEventListener('touchend', e => {
+        e.preventDefault();
+        cb.checked = !cb.checked;
+        applyCheckState();
       });
+      cb.addEventListener('change', applyCheckState); // desktop fallback
 
       // Text input (textarea for multi-line wrapping)
       const input = document.createElement('textarea');
       input.rows = 1;
       input.value = item.text;
+      // On iOS standalone PWA, textarea focus can be delayed; force it on touchend.
+      input.addEventListener('touchend', () => { input.focus(); });
       input.addEventListener('input', () => {
         state.items[id].text = input.value;
         if (input.value) delete row.dataset.new;
