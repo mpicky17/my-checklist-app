@@ -423,7 +423,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v18';
+    const APP_VERSION = 'my-checklist-v19';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -711,10 +711,11 @@
           const order = state.layouts[state.current];
           const fromIdx = order.indexOf(fromId);
           if (fromIdx !== -1) {
+            const baseline = [...order]; // capture pre-change order for conflict detection
             order.splice(fromIdx, 1);
             order.push(fromId);
             save();
-            fbSyncLayout(state.current);
+            fbSyncLayout(state.current, baseline);
             removeDropIndicator();
             render();
           }
@@ -765,10 +766,11 @@
         const order = state.layouts[state.current];
         const fromIdx = order.indexOf(dragId);
         if (fromIdx === -1) return;
+        const baseline = [...order]; // capture pre-change order for conflict detection
         order.splice(fromIdx, 1);
         order.push(dragId);
         save();
-        fbSyncLayout(state.current);
+        fbSyncLayout(state.current, baseline);
         removeDropIndicator();
         render();
       });
@@ -884,13 +886,14 @@
 
     function reorder(fromId, toId, after) {
       const order = state.layouts[state.current];
+      const baseline = [...order]; // capture pre-change order for conflict detection
       const fromIdx = order.indexOf(fromId);
       if (fromIdx === -1) return;
       order.splice(fromIdx, 1);
       const toIdx = order.indexOf(toId);
       order.splice(after ? toIdx + 1 : toIdx, 0, fromId);
       save();
-      fbSyncLayout(state.current);
+      fbSyncLayout(state.current, baseline);
       removeDropIndicator();
       render();
     }
@@ -1137,11 +1140,13 @@
           .catch(() => setSyncStatus('Sync failed \u2014 saved locally', 'error'));
       };
 
-      fbSyncLayout = function(layoutId) {
+      fbSyncLayout = function(layoutId, baseline) {
         if (!fbUid) return;
         const now = Date.now();
         state.layoutUpdatedAt[layoutId] = now;
-        lastSyncedLayoutOrder[layoutId] = [...state.layouts[layoutId]];
+        // Use the pre-change baseline as the conflict-detection anchor when provided.
+        // Without it (e.g. after conflict resolution), anchor to the current order.
+        lastSyncedLayoutOrder[layoutId] = baseline !== undefined ? [...baseline] : [...state.layouts[layoutId]];
         localStorage.setItem('checklist-v2', JSON.stringify(state));
         fbDb.ref('users/' + fbUid + '/checklist/layouts/' + layoutId).set(state.layouts[layoutId]);
         fbDb.ref('users/' + fbUid + '/checklist/layoutUpdatedAt/' + layoutId).set(now)
