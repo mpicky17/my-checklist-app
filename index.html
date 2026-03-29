@@ -324,7 +324,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v9';
+    const APP_VERSION = 'my-checklist-v10';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -445,7 +445,10 @@
       input.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          insertRowAfter(id);
+          // Defer to let iOS finish its internal keydown handling before moving focus.
+          // Without this, iOS refocuses the original textarea after the handler returns,
+          // overriding our .focus() call on the new row.
+          setTimeout(() => insertRowAfter(id), 0);
         }
       });
       input.addEventListener('blur', () => {
