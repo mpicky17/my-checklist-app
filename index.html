@@ -616,9 +616,12 @@
         const parsed = JSON.parse(saved);
         // Merge so new fields get defaults if missing
         state = Object.assign(state, parsed);
+        state.layouts         = Object.assign({ A: [], B: [], C: [] }, parsed.layouts);
         state.layoutNames     = Object.assign({ A: 'Layout A', B: 'Layout B', C: 'Layout C' }, parsed.layoutNames);
         state.hideChecked     = Object.assign({ A: false, B: false, C: false }, parsed.hideChecked);
         state.layoutUpdatedAt = Object.assign({ A: 0, B: 0, C: 0 }, parsed.layoutUpdatedAt);
+        // If upgrading from before Layout C existed, seed C with Layout A's order
+        if (!parsed.layouts || !parsed.layouts.C) state.layouts.C = [...state.layouts.A];
         // Migrate existing items to new model
         Object.keys(state.items).forEach(id => {
           if (!state.items[id].updatedAt) state.items[id].updatedAt = 0;
@@ -1790,8 +1793,10 @@
               if (snap.exists()) {
                 const remote = snap.val();
                 state = Object.assign(state, remote);
+                state.layouts         = Object.assign({ A: [], B: [], C: [] }, remote.layouts);
                 state.hideChecked     = Object.assign({ A: false, B: false, C: false }, remote.hideChecked);
                 state.layoutUpdatedAt = Object.assign({ A: 0, B: 0, C: 0 }, remote.layoutUpdatedAt);
+                if (!remote.layouts || !remote.layouts.C) state.layouts.C = [...state.layouts.A];
                 Object.keys(state.items || {}).forEach(id => {
                   state.items[id].updatedAt = state.items[id].updatedAt || 0;
                   state.items[id].deleted   = state.items[id].deleted   || false;
