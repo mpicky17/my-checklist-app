@@ -568,7 +568,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v27';
+    const APP_VERSION = 'my-checklist-v28';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1335,23 +1335,27 @@
     function isInvalidHeaderDrop(draggedId, targetRow, targetId, after) {
       const draggedItem = state.items[draggedId];
       if (!draggedItem || draggedItem.type !== 'header') return false;
+      const targetItem = state.items[targetId];
       if (!after) {
-        // Dropping before targetId — block if the previous visible DOM row is this item's own category header
-        const targetItem = state.items[targetId];
-        if (targetItem && targetItem.type === 'item' && targetItem.categoryIds?.[state.current]) {
-          let prev = targetRow.previousElementSibling;
-          while (prev && prev.classList.contains('drop-indicator')) prev = prev.previousElementSibling;
-          if (prev && prev.dataset.id === targetItem.categoryIds[state.current]) return true;
-        }
+        // Dropping before any categorized item always splits its category — block unconditionally
+        if (targetItem && targetItem.type === 'item' && targetItem.categoryIds?.[state.current]) return true;
       } else {
         // Dropping after a header — block if the next visible DOM row belongs to it
-        const targetItem = state.items[targetId];
         if (targetItem && targetItem.type === 'header') {
           let next = targetRow.nextElementSibling;
           while (next && next.classList.contains('drop-indicator')) next = next.nextElementSibling;
           if (next && next.dataset.id && !next.classList.contains('add-row')) {
             const nextItem = state.items[next.dataset.id];
             if (nextItem && nextItem.categoryIds?.[state.current] === targetId) return true;
+          }
+        }
+        // Dropping after a categorized item — block if the next visible DOM row is in the same category
+        if (targetItem && targetItem.type === 'item' && targetItem.categoryIds?.[state.current]) {
+          let next = targetRow.nextElementSibling;
+          while (next && next.classList.contains('drop-indicator')) next = next.nextElementSibling;
+          if (next && next.dataset.id && !next.classList.contains('add-row')) {
+            const nextItem = state.items[next.dataset.id];
+            if (nextItem && nextItem.categoryIds?.[state.current] === targetItem.categoryIds[state.current]) return true;
           }
         }
       }
