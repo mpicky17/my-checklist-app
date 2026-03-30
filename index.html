@@ -380,6 +380,7 @@
       .category-triangle            { color: #818cf8; }
       .category-btn                 { color: #636366; }
       .category-btn:hover           { color: #818cf8; background: #2c2c2e; }
+      .category-btn.in-category     { color: #818cf8; }
       .category-menu                { background: #1c1c1e; border-color: #3a3a3c; }
       .category-menu-item           { color: #f2f2f7; }
       .category-menu-item:hover     { background: #2c2c2e; color: #818cf8; }
@@ -398,6 +399,7 @@
     .header-row textarea {
       font-weight: 600;
       font-size: 1.05rem;
+      color: #1a1a1a;
     }
 
     .category-triangle {
@@ -438,6 +440,11 @@
     .category-btn:hover {
       color: #4f46e5;
       background: #f5f3ff;
+    }
+
+    .category-btn.in-category {
+      color: #4f46e5;
+      visibility: visible;
     }
 
     @media (hover: none) {
@@ -561,7 +568,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v20';
+    const APP_VERSION = 'my-checklist-v21';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -797,6 +804,7 @@
       row.addEventListener('dragover', e => {
         e.preventDefault();
         if (!dragId || dragId === id) return;
+        if (isInDraggedGroup(id)) return;
         e.dataTransfer.dropEffect = 'move';
         const after = isCursorAfterMidpoint(e, row);
         showDropIndicator(row, after);
@@ -805,6 +813,7 @@
       row.addEventListener('drop', e => {
         e.preventDefault();
         if (!dragId || dragId === id) return;
+        if (isInDraggedGroup(id)) return;
         const after = isCursorAfterMidpoint(e, row);
         reorder(dragId, id, after);
       });
@@ -845,7 +854,12 @@
         const targetRow = el && el.closest('.row:not(.add-row):not(.dragging)');
         const targetAddRow = el && el.closest('.add-row');
 
-        if (targetRow && targetRow.dataset.id !== touchDragId) {
+        const touchFromItem = state.items[touchDragId];
+        const touchGroupIds = (touchFromItem && touchFromItem.type === 'header')
+          ? getCategoryItems(state.current, touchDragId, true) : [];
+
+        if (targetRow && targetRow.dataset.id !== touchDragId
+            && !touchGroupIds.includes(targetRow.dataset.id)) {
           const tRect = targetRow.getBoundingClientRect();
           showDropIndicator(targetRow, touch.clientY > tRect.top + tRect.height / 2);
         } else if (targetAddRow) {
@@ -870,7 +884,12 @@
         const targetRow = el && el.closest('.row:not(.add-row)');
         const targetAddRow = el && el.closest('.add-row');
 
-        if (targetRow && targetRow.dataset.id && targetRow.dataset.id !== fromId) {
+        const touchEndFromItem = state.items[fromId];
+        const touchEndGroupIds = (touchEndFromItem && touchEndFromItem.type === 'header')
+          ? getCategoryItems(state.current, fromId, true) : [];
+
+        if (targetRow && targetRow.dataset.id && targetRow.dataset.id !== fromId
+            && !touchEndGroupIds.includes(targetRow.dataset.id)) {
           const tRect = targetRow.getBoundingClientRect();
           reorder(fromId, targetRow.dataset.id, touch.clientY > tRect.top + tRect.height / 2);
         } else if (targetAddRow) {
@@ -909,9 +928,34 @@
         catBtn.className = 'category-btn';
         catBtn.title = 'Assign to category';
         catBtn.textContent = '⤷';
+
+        // Purple + always-visible when this item is positionally under a header
+        const layoutOrder = state.layouts[state.current];
+        const itemIdx = layoutOrder.indexOf(id);
+        let inCategory = false;
+        for (let i = itemIdx - 1; i >= 0; i--) {
+          const pid = layoutOrder[i];
+          const pitem = state.items[pid];
+          if (!pitem || pitem.deleted) continue;
+          if (pitem.type === 'header') { inCategory = true; }
+          break; // first non-deleted item/header above decides membership
+        }
+        if (inCategory) catBtn.classList.add('in-category');
+
+        // Stop pointerdown from bubbling so menu dismiss handler isn't triggered
+        catBtn.addEventListener('pointerdown', e => e.stopPropagation());
+
         catBtn.addEventListener('click', e => {
           e.stopPropagation();
-          showCategoryMenu(id, catBtn);
+          const hasHeaders = state.layouts[state.current].some(hid => {
+            const h = state.items[hid];
+            return h && !h.deleted && h.type === 'header';
+          });
+          if (!hasHeaders) {
+            commitAddHeader(id);
+          } else {
+            showCategoryMenu(id, catBtn);
+          }
         });
         row.appendChild(catBtn);
       }
@@ -1087,7 +1131,7 @@
         const idx = order.indexOf(insertBeforeId);
         order.splice(idx !== -1 ? idx : 0, 0, id);
       } else {
-        order.unshift(id);
+        order.push(id);
       }
       save();
       fbSyncItem(id);
@@ -1142,12 +1186,13 @@
       row.style.position = 'relative';
       row.appendChild(menu);
 
-      // Dismiss on next click outside
+      // Stop propagation inside menu so the dismiss handler below is not triggered by menu clicks
+      menu.addEventListener('pointerdown', e => e.stopPropagation());
+
+      // Dismiss on next pointerdown outside — more reliable than 'click' on mobile
+      const dismissHandler = () => { menu.remove(); };
       setTimeout(() => {
-        document.addEventListener('click', function dismiss() {
-          menu.remove();
-          document.removeEventListener('click', dismiss);
-        }, { once: true });
+        document.addEventListener('pointerdown', dismissHandler, { once: true });
       }, 0);
     }
 
@@ -1219,6 +1264,14 @@
       });
 
       dialog.querySelector('.btn-cancel').addEventListener('click', () => overlay.remove());
+    }
+
+    // Returns true if targetId is a child item of the currently-dragged header
+    function isInDraggedGroup(targetId) {
+      if (!dragId) return false;
+      const draggedItem = state.items[dragId];
+      if (!draggedItem || draggedItem.type !== 'header') return false;
+      return getCategoryItems(state.current, dragId, true).includes(targetId);
     }
 
     // ── Drag helpers ──────────────────────────────────────────────────────────
