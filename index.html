@@ -560,6 +560,7 @@
         <div class="layout-tabs">
           <button class="layout-tab active" data-layout="A">Layout A</button>
           <button class="layout-tab" data-layout="B">Layout B</button>
+          <button class="layout-tab" data-layout="C">Layout C</button>
         </div>
         <span id="app-version" class="app-version"></span>
       </div>
@@ -569,25 +570,25 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v30';
+    const APP_VERSION = 'my-checklist-v31';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
     let state = {
       items: {},          // { [id]: { text, checked, updatedAt, deleted } }
-      layouts: { A: [], B: [] },
+      layouts: { A: [], B: [], C: [] },
       current: 'A',
       title: 'My Checklist',
-      layoutNames: { A: 'Layout A', B: 'Layout B' },
-      hideChecked: { A: false, B: false },  // local-only, not synced
-      layoutUpdatedAt: { A: 0, B: 0 }
+      layoutNames: { A: 'Layout A', B: 'Layout B', C: 'Layout C' },
+      hideChecked: { A: false, B: false, C: false },  // local-only, not synced
+      layoutUpdatedAt: { A: 0, B: 0, C: 0 }
     };
 
     // Tracks the last layout order successfully synced, used for conflict detection
-    let lastSyncedLayoutOrder = { A: [], B: [] };
+    let lastSyncedLayoutOrder = { A: [], B: [], C: [] };
 
     // Collapsed category headers — local only, not persisted or synced
-    let collapsedHeaders = { A: new Set(), B: new Set() };
+    let collapsedHeaders = { A: new Set(), B: new Set(), C: new Set() };
 
     // No-ops replaced by real implementations once Firebase is initialized
     let fbSyncItem   = function() {};
@@ -615,9 +616,9 @@
         const parsed = JSON.parse(saved);
         // Merge so new fields get defaults if missing
         state = Object.assign(state, parsed);
-        state.layoutNames     = Object.assign({ A: 'Layout A', B: 'Layout B' }, parsed.layoutNames);
-        state.hideChecked     = Object.assign({ A: false, B: false }, parsed.hideChecked);
-        state.layoutUpdatedAt = Object.assign({ A: 0, B: 0 }, parsed.layoutUpdatedAt);
+        state.layoutNames     = Object.assign({ A: 'Layout A', B: 'Layout B', C: 'Layout C' }, parsed.layoutNames);
+        state.hideChecked     = Object.assign({ A: false, B: false, C: false }, parsed.hideChecked);
+        state.layoutUpdatedAt = Object.assign({ A: 0, B: 0, C: 0 }, parsed.layoutUpdatedAt);
         // Migrate existing items to new model
         Object.keys(state.items).forEach(id => {
           if (!state.items[id].updatedAt) state.items[id].updatedAt = 0;
@@ -627,10 +628,11 @@
             const oldCat = state.items[id].categoryId || null;
             const inA = oldCat ? state.layouts.A.includes(oldCat) : false;
             const inB = oldCat ? state.layouts.B.includes(oldCat) : false;
-            state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null };
+            const inC = oldCat ? (state.layouts.C || []).includes(oldCat) : false;
+            state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null, C: inC ? oldCat : null };
           }
         });
-        lastSyncedLayoutOrder = { A: [...state.layouts.A], B: [...state.layouts.B] };
+        lastSyncedLayoutOrder = { A: [...state.layouts.A], B: [...state.layouts.B], C: [...(state.layouts.C || [])] };
       } else {
         // Migrate from old format if present
         const old = localStorage.getItem('checklist');
@@ -641,6 +643,7 @@
             state.items[id] = { text, checked, updatedAt: 0, deleted: false };
             state.layouts.A.push(id);
             state.layouts.B.push(id);
+            state.layouts.C.push(id);
           });
         }
       }
@@ -771,8 +774,9 @@
           if (isHeader) {
             state.layouts[state.current] = state.layouts[state.current].filter(x => x !== id);
           } else {
-            state.layouts.A = state.layouts.A.filter(x => x !== id);
-            state.layouts.B = state.layouts.B.filter(x => x !== id);
+            Object.keys(state.layouts).forEach(l => {
+              state.layouts[l] = state.layouts[l].filter(x => x !== id);
+            });
           }
           save();
           row.remove();
@@ -949,7 +953,7 @@
               newCat = pitem.type === 'header' ? pid : (pitem.categoryIds?.[state.current] || null);
               break;
             }
-            if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null };
+            if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null, C: null };
             if (state.items[fromId].categoryIds[state.current] !== newCat) {
               state.items[fromId].categoryIds[state.current] = newCat;
               state.items[fromId].updatedAt = Date.now();
@@ -1067,7 +1071,7 @@
     function insertRowAfter(afterId) {
       const id = genId();
       const afterItem = state.items[afterId];
-      const newCategoryIds = { A: null, B: null };
+      const newCategoryIds = { A: null, B: null, C: null };
       if (afterItem) {
         newCategoryIds[state.current] = afterItem.type === 'header'
           ? afterId
@@ -1078,13 +1082,13 @@
       const current = state.layouts[state.current];
       current.splice(current.indexOf(afterId) + 1, 0, id);
 
-      const other = state.current === 'A' ? 'B' : 'A';
-      state.layouts[other].push(id);
+      const others = Object.keys(state.layouts).filter(l => l !== state.current);
+      others.forEach(l => state.layouts[l].push(id));
 
       save();
       fbSyncItem(id);
       fbSyncLayout(state.current);
-      fbSyncLayout(other);
+      others.forEach(l => fbSyncLayout(l));
 
       const afterRow = list.querySelector(`.row[data-id="${afterId}"]`);
       const newRow = createRow(id);
@@ -1129,21 +1133,52 @@
       addCatBtn.textContent = '+ Add category';
       addCatBtn.addEventListener('click', () => commitAddHeader(null));
 
+      const expandAllBtn = document.createElement('button');
+      expandAllBtn.className = 'add-category-btn';
+      expandAllBtn.textContent = '+ Expand all';
+      expandAllBtn.addEventListener('click', () => {
+        collapsedHeaders[state.current].clear();
+        render();
+      });
+
+      const collapseAllBtn = document.createElement('button');
+      collapseAllBtn.className = 'add-category-btn';
+      collapseAllBtn.textContent = '- Collapse all';
+      collapseAllBtn.addEventListener('click', () => {
+        state.layouts[state.current].forEach(id => {
+          const item = state.items[id];
+          if (item && !item.deleted && item.type === 'header') {
+            collapsedHeaders[state.current].add(id);
+          }
+        });
+        render();
+      });
+
+      const btnRow = document.createElement('div');
+      btnRow.className = 'hide-checked-bar-row';
+      btnRow.style.justifyContent = 'flex-start';
+      btnRow.style.gap = '12px';
+      btnRow.appendChild(addCatBtn);
+      btnRow.appendChild(expandAllBtn);
+      btnRow.appendChild(collapseAllBtn);
+
       bar.appendChild(topRow);
-      bar.appendChild(addCatBtn);
+      bar.appendChild(btnRow);
       return bar;
     }
 
     function commitAdd(text) {
       if (!text) return;
       const id = genId();
-      state.items[id] = { type: 'item', text, checked: false, updatedAt: Date.now(), deleted: false, categoryIds: { A: null, B: null } };
+      state.items[id] = { type: 'item', text, checked: false, updatedAt: Date.now(), deleted: false, categoryIds: { A: null, B: null, C: null } };
       state.layouts.A.push(id);
       state.layouts.B.push(id);
+      state.layouts.C.push(id);
       save();
       fbSyncItem(id);
       fbSyncLayout('A');
       fbSyncLayout('B');
+      fbSyncLayout('C');
 
       const addRow = list.querySelector('.add-row');
       addRow.querySelector('input').value = '';
@@ -1176,7 +1211,7 @@
         order.splice(idx !== -1 ? idx : 0, 0, id);
         // Auto-assign the item that triggered this header creation to the new category
         if (state.items[insertBeforeId]) {
-          if (!state.items[insertBeforeId].categoryIds) state.items[insertBeforeId].categoryIds = { A: null, B: null };
+          if (!state.items[insertBeforeId].categoryIds) state.items[insertBeforeId].categoryIds = { A: null, B: null, C: null };
           state.items[insertBeforeId].categoryIds[state.current] = id;
           state.items[insertBeforeId].updatedAt = Date.now();
           fbSyncItem(insertBeforeId);
@@ -1252,7 +1287,7 @@
       const baseline = [...order];
 
       // Explicitly assign item to this category (per-layout)
-      if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null };
+      if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null, C: null };
       state.items[itemId].categoryIds[state.current] = headerId;
       state.items[itemId].updatedAt = Date.now();
 
@@ -1452,7 +1487,7 @@
           newCategoryId = pitem.type === 'header' ? pid : (pitem.categoryIds?.[state.current] || null);
           break;
         }
-        if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null };
+        if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null, C: null };
         if (state.items[fromId].categoryIds[state.current] !== newCategoryId) {
           state.items[fromId].categoryIds[state.current] = newCategoryId;
           state.items[fromId].updatedAt = Date.now();
@@ -1523,7 +1558,7 @@
         input.select();
 
         function commit() {
-          const val = input.value.trim() || (layout === 'A' ? 'Layout A' : 'Layout B');
+          const val = input.value.trim() || (layout === 'A' ? 'Layout A' : layout === 'B' ? 'Layout B' : 'Layout C');
           state.layoutNames[layout] = val;
           save();
           fbSyncMeta();
@@ -1648,7 +1683,8 @@
               const oldCat = state.items[id].categoryId || null;
               const inA = oldCat ? state.layouts.A.includes(oldCat) : false;
               const inB = oldCat ? state.layouts.B.includes(oldCat) : false;
-              state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null };
+              const inC = oldCat ? (state.layouts.C || []).includes(oldCat) : false;
+              state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null, C: inC ? oldCat : null };
             }
             changed = true;
           }
@@ -1754,8 +1790,8 @@
               if (snap.exists()) {
                 const remote = snap.val();
                 state = Object.assign(state, remote);
-                state.hideChecked     = Object.assign({ A: false, B: false }, remote.hideChecked);
-                state.layoutUpdatedAt = Object.assign({ A: 0, B: 0 }, remote.layoutUpdatedAt);
+                state.hideChecked     = Object.assign({ A: false, B: false, C: false }, remote.hideChecked);
+                state.layoutUpdatedAt = Object.assign({ A: 0, B: 0, C: 0 }, remote.layoutUpdatedAt);
                 Object.keys(state.items || {}).forEach(id => {
                   state.items[id].updatedAt = state.items[id].updatedAt || 0;
                   state.items[id].deleted   = state.items[id].deleted   || false;
@@ -1763,12 +1799,14 @@
                     const oldCat = state.items[id].categoryId || null;
                     const inA = oldCat ? state.layouts.A.includes(oldCat) : false;
                     const inB = oldCat ? state.layouts.B.includes(oldCat) : false;
-                    state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null };
+                    const inC = oldCat ? (state.layouts.C || []).includes(oldCat) : false;
+                    state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null, C: inC ? oldCat : null };
                   }
                 });
                 lastSyncedLayoutOrder = {
                   A: [...(state.layouts.A || [])],
-                  B: [...(state.layouts.B || [])]
+                  B: [...(state.layouts.B || [])],
+                  C: [...(state.layouts.C || [])]
                 };
                 localStorage.setItem('checklist-v2', JSON.stringify(state));
                 render();
