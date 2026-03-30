@@ -568,7 +568,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v26';
+    const APP_VERSION = 'my-checklist-v27';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -780,7 +780,16 @@
       del.textContent = '×';
       del.addEventListener('click', () => {
         if (isHeader) {
-          showDeleteCategoryDialog(id);
+          const catItems = getCategoryItems(state.current, id);
+          if (catItems.length === 0) {
+            state.items[id].deleted = true;
+            state.items[id].updatedAt = Date.now();
+            save();
+            fbSyncItem(id);
+            render();
+          } else {
+            showDeleteCategoryDialog(id);
+          }
         } else {
           state.items[id].deleted = true;
           state.items[id].updatedAt = Date.now();
@@ -808,8 +817,9 @@
         e.preventDefault();
         if (!dragId || dragId === id) return;
         if (isInDraggedGroup(id)) return;
-        e.dataTransfer.dropEffect = 'move';
         const after = isCursorAfterMidpoint(e, row);
+        if (isInvalidHeaderDrop(dragId, row, id, after)) return;
+        e.dataTransfer.dropEffect = 'move';
         showDropIndicator(row, after);
       });
 
@@ -818,6 +828,7 @@
         if (!dragId || dragId === id) return;
         if (isInDraggedGroup(id)) return;
         const after = isCursorAfterMidpoint(e, row);
+        if (isInvalidHeaderDrop(dragId, row, id, after)) return;
         reorder(dragId, id, after);
       });
 
@@ -864,7 +875,12 @@
         if (targetRow && targetRow.dataset.id !== touchDragId
             && !touchGroupIds.includes(targetRow.dataset.id)) {
           const tRect = targetRow.getBoundingClientRect();
-          showDropIndicator(targetRow, touch.clientY > tRect.top + tRect.height / 2);
+          const after = touch.clientY > tRect.top + tRect.height / 2;
+          if (!isInvalidHeaderDrop(touchDragId, targetRow, targetRow.dataset.id, after)) {
+            showDropIndicator(targetRow, after);
+          } else {
+            removeDropIndicator();
+          }
         } else if (targetAddRow) {
           showDropIndicator(targetAddRow, false);
         } else {
@@ -894,7 +910,12 @@
         if (targetRow && targetRow.dataset.id && targetRow.dataset.id !== fromId
             && !touchEndGroupIds.includes(targetRow.dataset.id)) {
           const tRect = targetRow.getBoundingClientRect();
-          reorder(fromId, targetRow.dataset.id, touch.clientY > tRect.top + tRect.height / 2);
+          const after = touch.clientY > tRect.top + tRect.height / 2;
+          if (!isInvalidHeaderDrop(fromId, targetRow, targetRow.dataset.id, after)) {
+            reorder(fromId, targetRow.dataset.id, after);
+          } else {
+            removeDropIndicator();
+          }
         } else if (targetAddRow) {
           const order = state.layouts[state.current];
           const baseline = [...order];
@@ -960,8 +981,6 @@
           });
           if (headers.length === 0) {
             commitAddHeader(id);
-          } else if (headers.length === 1) {
-            moveToCategory(id, headers[0]);
           } else {
             showCategoryMenu(id, catBtn);
           }
@@ -1149,7 +1168,7 @@
           fbSyncItem(insertBeforeId);
         }
       } else {
-        order.push(id);
+        order.unshift(id);
       }
       save();
       fbSyncItem(id);
@@ -1312,6 +1331,33 @@
       return !!(targetItem && targetItem.categoryIds?.[state.current] === dragId);
     }
 
+    // Returns true if dropping a header at (targetRow, after) would split another category from its items
+    function isInvalidHeaderDrop(draggedId, targetRow, targetId, after) {
+      const draggedItem = state.items[draggedId];
+      if (!draggedItem || draggedItem.type !== 'header') return false;
+      if (!after) {
+        // Dropping before targetId — block if the previous visible DOM row is this item's own category header
+        const targetItem = state.items[targetId];
+        if (targetItem && targetItem.type === 'item' && targetItem.categoryIds?.[state.current]) {
+          let prev = targetRow.previousElementSibling;
+          while (prev && prev.classList.contains('drop-indicator')) prev = prev.previousElementSibling;
+          if (prev && prev.dataset.id === targetItem.categoryIds[state.current]) return true;
+        }
+      } else {
+        // Dropping after a header — block if the next visible DOM row belongs to it
+        const targetItem = state.items[targetId];
+        if (targetItem && targetItem.type === 'header') {
+          let next = targetRow.nextElementSibling;
+          while (next && next.classList.contains('drop-indicator')) next = next.nextElementSibling;
+          if (next && next.dataset.id && !next.classList.contains('add-row')) {
+            const nextItem = state.items[next.dataset.id];
+            if (nextItem && nextItem.categoryIds?.[state.current] === targetId) return true;
+          }
+        }
+      }
+      return false;
+    }
+
     // ── Drag helpers ──────────────────────────────────────────────────────────
 
     const SCROLL_ZONE  = 80; // px from viewport edge to begin auto-scroll
@@ -1362,7 +1408,14 @@
         if (toIdx === -1) {
           group.forEach(gid => order.push(gid));
         } else {
-          const insertAt = after ? toIdx + 1 : toIdx;
+          let insertAt = after ? toIdx + 1 : toIdx;
+          // If dropping after a collapsed category header, skip past its hidden items
+          if (after && state.items[toId]?.type === 'header' && collapsedHeaders[state.current].has(toId)) {
+            while (insertAt < order.length &&
+                   state.items[order[insertAt]]?.categoryIds?.[state.current] === toId) {
+              insertAt++;
+            }
+          }
           [...group].reverse().forEach(gid => order.splice(insertAt, 0, gid));
         }
       } else {
