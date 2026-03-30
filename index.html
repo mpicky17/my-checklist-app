@@ -286,7 +286,7 @@
     .hide-checked-bar-row {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 8px;
     }
 
     .hide-checked-label {
@@ -568,7 +568,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v28';
+    const APP_VERSION = 'my-checklist-v29';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -710,14 +710,19 @@
         leftCtrl.className = 'category-triangle';
         leftCtrl.title = collapsed ? 'Expand' : 'Collapse';
         leftCtrl.textContent = collapsed ? '▶' : '▼';
-        leftCtrl.addEventListener('click', () => {
+        function applyTriangle() {
           if (collapsedHeaders[state.current].has(id)) {
             collapsedHeaders[state.current].delete(id);
           } else {
             collapsedHeaders[state.current].add(id);
           }
           render();
+        }
+        leftCtrl.addEventListener('touchend', e => {
+          e.preventDefault();
+          applyTriangle();
         });
+        leftCtrl.addEventListener('click', applyTriangle);
       } else {
         row.className = 'row' + (item.checked ? ' checked' : '');
         leftCtrl = document.createElement('input');
@@ -973,8 +978,7 @@
         if (item.categoryIds?.[state.current]) catBtn.classList.add('in-category');
 
         catBtn.addEventListener('pointerdown', e => e.stopPropagation());
-        catBtn.addEventListener('click', e => {
-          e.stopPropagation();
+        function applyCatBtn() {
           const headers = state.layouts[state.current].filter(hid => {
             const h = state.items[hid];
             return h && !h.deleted && h.type === 'header';
@@ -984,6 +988,15 @@
           } else {
             showCategoryMenu(id, catBtn);
           }
+        }
+        catBtn.addEventListener('touchend', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          applyCatBtn();
+        });
+        catBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          applyCatBtn();
         });
         row.appendChild(catBtn);
       }
