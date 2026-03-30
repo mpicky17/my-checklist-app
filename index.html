@@ -568,7 +568,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v25';
+    const APP_VERSION = 'my-checklist-v26';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -622,7 +622,12 @@
           if (!state.items[id].updatedAt) state.items[id].updatedAt = 0;
           if (state.items[id].deleted === undefined) state.items[id].deleted = false;
           if (!state.items[id].type) state.items[id].type = 'item';
-          if (!state.items[id].hasOwnProperty('categoryId')) state.items[id].categoryId = null;
+          if (!state.items[id].hasOwnProperty('categoryIds')) {
+            const oldCat = state.items[id].categoryId || null;
+            const inA = oldCat ? state.layouts.A.includes(oldCat) : false;
+            const inB = oldCat ? state.layouts.B.includes(oldCat) : false;
+            state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null };
+          }
         });
         lastSyncedLayoutOrder = { A: [...state.layouts.A], B: [...state.layouts.B] };
       } else {
@@ -675,7 +680,7 @@
         const item = state.items[id];
         if (item.deleted) return;
         if (item.type === 'item') {
-          if (item.categoryId && collapsedHeaders[state.current].has(item.categoryId)) return;
+          if (item.categoryIds?.[state.current] && collapsedHeaders[state.current].has(item.categoryIds[state.current])) return;
           if (state.hideChecked[state.current] && item.checked) return;
         }
         list.insertBefore(createRow(id), addRow);
@@ -914,11 +919,12 @@
               const pid = order[i];
               const pitem = state.items[pid];
               if (!pitem || pitem.deleted) continue;
-              newCat = pitem.type === 'header' ? pid : (pitem.categoryId || null);
+              newCat = pitem.type === 'header' ? pid : (pitem.categoryIds?.[state.current] || null);
               break;
             }
-            if (state.items[fromId].categoryId !== newCat) {
-              state.items[fromId].categoryId = newCat;
+            if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null };
+            if (state.items[fromId].categoryIds[state.current] !== newCat) {
+              state.items[fromId].categoryIds[state.current] = newCat;
               state.items[fromId].updatedAt = Date.now();
               fbSyncItem(fromId);
             }
@@ -943,7 +949,7 @@
         catBtn.textContent = '⤷';
 
         // Purple + always-visible when this item has been explicitly assigned to a category
-        if (item.categoryId) catBtn.classList.add('in-category');
+        if (item.categoryIds?.[state.current]) catBtn.classList.add('in-category');
 
         catBtn.addEventListener('pointerdown', e => e.stopPropagation());
         catBtn.addEventListener('click', e => {
@@ -1027,7 +1033,14 @@
 
     function insertRowAfter(afterId) {
       const id = genId();
-      state.items[id] = { type: 'item', text: '', checked: false, updatedAt: Date.now(), deleted: false, categoryId: null };
+      const afterItem = state.items[afterId];
+      const newCategoryIds = { A: null, B: null };
+      if (afterItem) {
+        newCategoryIds[state.current] = afterItem.type === 'header'
+          ? afterId
+          : ((afterItem.categoryIds && afterItem.categoryIds[state.current]) || null);
+      }
+      state.items[id] = { type: 'item', text: '', checked: false, updatedAt: Date.now(), deleted: false, categoryIds: newCategoryIds };
 
       const current = state.layouts[state.current];
       current.splice(current.indexOf(afterId) + 1, 0, id);
@@ -1091,7 +1104,7 @@
     function commitAdd(text) {
       if (!text) return;
       const id = genId();
-      state.items[id] = { type: 'item', text, checked: false, updatedAt: Date.now(), deleted: false, categoryId: null };
+      state.items[id] = { type: 'item', text, checked: false, updatedAt: Date.now(), deleted: false, categoryIds: { A: null, B: null } };
       state.layouts.A.push(id);
       state.layouts.B.push(id);
       save();
@@ -1115,7 +1128,7 @@
       return order.filter(sid => {
         const sitem = state.items[sid];
         if (!sitem || sitem.type !== 'item') return false;
-        if (sitem.categoryId !== headerId) return false;
+        if (!sitem.categoryIds || sitem.categoryIds[layoutId] !== headerId) return false;
         if (!includeDeleted && sitem.deleted) return false;
         return true;
       });
@@ -1130,7 +1143,8 @@
         order.splice(idx !== -1 ? idx : 0, 0, id);
         // Auto-assign the item that triggered this header creation to the new category
         if (state.items[insertBeforeId]) {
-          state.items[insertBeforeId].categoryId = id;
+          if (!state.items[insertBeforeId].categoryIds) state.items[insertBeforeId].categoryIds = { A: null, B: null };
+          state.items[insertBeforeId].categoryIds[state.current] = id;
           state.items[insertBeforeId].updatedAt = Date.now();
           fbSyncItem(insertBeforeId);
         }
@@ -1204,8 +1218,9 @@
       const order = state.layouts[state.current];
       const baseline = [...order];
 
-      // Explicitly assign item to this category
-      state.items[itemId].categoryId = headerId;
+      // Explicitly assign item to this category (per-layout)
+      if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null };
+      state.items[itemId].categoryIds[state.current] = headerId;
       state.items[itemId].updatedAt = Date.now();
 
       // Remove item from current position
@@ -1216,7 +1231,7 @@
       let insertAt = -1;
       for (let i = 0; i < order.length; i++) {
         const iitem = state.items[order[i]];
-        if (iitem && !iitem.deleted && iitem.categoryId === headerId) insertAt = i;
+        if (iitem && !iitem.deleted && iitem.categoryIds?.[state.current] === headerId) insertAt = i;
       }
       if (insertAt === -1) {
         // No other items in category yet — insert right after the header
@@ -1256,6 +1271,15 @@
         overlay.remove();
         state.items[headerId].deleted = true;
         state.items[headerId].updatedAt = Date.now();
+        // Clear category assignment for items that belonged to this category in the current layout
+        state.layouts[state.current].forEach(iid => {
+          const iitem = state.items[iid];
+          if (iitem && iitem.categoryIds && iitem.categoryIds[state.current] === headerId) {
+            iitem.categoryIds[state.current] = null;
+            iitem.updatedAt = Date.now();
+            fbSyncItem(iid);
+          }
+        });
         save();
         fbSyncItem(headerId);
         render();
@@ -1285,7 +1309,7 @@
       const draggedItem = state.items[dragId];
       if (!draggedItem || draggedItem.type !== 'header') return false;
       const targetItem = state.items[targetId];
-      return !!(targetItem && targetItem.categoryId === dragId);
+      return !!(targetItem && targetItem.categoryIds?.[state.current] === dragId);
     }
 
     // ── Drag helpers ──────────────────────────────────────────────────────────
@@ -1354,11 +1378,12 @@
           const pid = order[i];
           const pitem = state.items[pid];
           if (!pitem || pitem.deleted) continue;
-          newCategoryId = pitem.type === 'header' ? pid : (pitem.categoryId || null);
+          newCategoryId = pitem.type === 'header' ? pid : (pitem.categoryIds?.[state.current] || null);
           break;
         }
-        if (state.items[fromId].categoryId !== newCategoryId) {
-          state.items[fromId].categoryId = newCategoryId;
+        if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null };
+        if (state.items[fromId].categoryIds[state.current] !== newCategoryId) {
+          state.items[fromId].categoryIds[state.current] = newCategoryId;
           state.items[fromId].updatedAt = Date.now();
           fbSyncItem(fromId);
         }
@@ -1548,7 +1573,12 @@
           const local = state.items[id];
           if (!local || (remoteItem.updatedAt || 0) > (local.updatedAt || 0)) {
             state.items[id] = remoteItem;
-            if (!state.items[id].hasOwnProperty('categoryId')) state.items[id].categoryId = null;
+            if (!state.items[id].hasOwnProperty('categoryIds')) {
+              const oldCat = state.items[id].categoryId || null;
+              const inA = oldCat ? state.layouts.A.includes(oldCat) : false;
+              const inB = oldCat ? state.layouts.B.includes(oldCat) : false;
+              state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null };
+            }
             changed = true;
           }
         });
@@ -1658,7 +1688,12 @@
                 Object.keys(state.items || {}).forEach(id => {
                   state.items[id].updatedAt = state.items[id].updatedAt || 0;
                   state.items[id].deleted   = state.items[id].deleted   || false;
-                  if (!state.items[id].hasOwnProperty('categoryId')) state.items[id].categoryId = null;
+                  if (!state.items[id].hasOwnProperty('categoryIds')) {
+                    const oldCat = state.items[id].categoryId || null;
+                    const inA = oldCat ? state.layouts.A.includes(oldCat) : false;
+                    const inB = oldCat ? state.layouts.B.includes(oldCat) : false;
+                    state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null };
+                  }
                 });
                 lastSyncedLayoutOrder = {
                   A: [...(state.layouts.A || [])],
