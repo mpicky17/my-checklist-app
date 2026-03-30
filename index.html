@@ -375,7 +375,7 @@
       .conflict-dialog h3           { color: #f2f2f7; }
       .conflict-dialog p            { color: #aeaeb2; }
       .conflict-dialog .btn-keep    { background: #1c1c1e; color: #818cf8; border-color: #818cf8; }
-      .header-row                   { background: #2c2c2e; }
+      .header-row                   { background: #2d2a50; }
       .header-row textarea          { color: #f2f2f7; }
       .category-triangle            { color: #818cf8; }
       .category-btn                 { color: #636366; }
@@ -568,7 +568,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v22';
+    const APP_VERSION = 'my-checklist-v23';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -907,6 +907,21 @@
               order.splice(fromIdx, 1);
               order.push(fromId);
             }
+            // Update categoryId based on what's now immediately above the dropped item
+            const newIdx2 = order.indexOf(fromId);
+            let newCat = null;
+            for (let i = newIdx2 - 1; i >= 0; i--) {
+              const pid = order[i];
+              const pitem = state.items[pid];
+              if (!pitem || pitem.deleted) continue;
+              newCat = pitem.type === 'header' ? pid : (pitem.categoryId || null);
+              break;
+            }
+            if (state.items[fromId].categoryId !== newCat) {
+              state.items[fromId].categoryId = newCat;
+              state.items[fromId].updatedAt = Date.now();
+              fbSyncItem(fromId);
+            }
           }
           save();
           fbSyncLayout(state.current, baseline);
@@ -930,15 +945,17 @@
         // Purple + always-visible when this item has been explicitly assigned to a category
         if (item.categoryId) catBtn.classList.add('in-category');
 
+        catBtn.addEventListener('pointerdown', e => e.stopPropagation());
         catBtn.addEventListener('click', e => {
           e.stopPropagation();
-          const hasHeaders = state.layouts[state.current].some(hid => {
+          const headers = state.layouts[state.current].filter(hid => {
             const h = state.items[hid];
             return h && !h.deleted && h.type === 'header';
           });
-          if (!hasHeaders) {
-            // No categories exist yet — single click creates one above this item
+          if (headers.length === 0) {
             commitAddHeader(id);
+          } else if (headers.length === 1) {
+            moveToCategory(id, headers[0]);
           } else {
             showCategoryMenu(id, catBtn);
           }
@@ -1173,12 +1190,14 @@
       row.style.position = 'relative';
       row.appendChild(menu);
 
-      // Dismiss on next click outside the menu.
-      // catBtn already calls e.stopPropagation() so the opening click never reaches document.
-      menu.addEventListener('click', e => e.stopPropagation());
-      document.addEventListener('click', function dismiss() {
-        menu.remove();
-      }, { once: true });
+      // Dismiss on next tap/click outside the menu.
+      // pointerdown on catBtn is stopped so the opening tap doesn't immediately dismiss.
+      menu.addEventListener('pointerdown', e => e.stopPropagation());
+      setTimeout(() => {
+        document.addEventListener('pointerdown', function dismiss() {
+          menu.remove();
+        }, { once: true });
+      }, 0);
     }
 
     function moveToCategory(itemId, headerId) {
@@ -1328,6 +1347,21 @@
         order.splice(fromIdx, 1);
         const toIdx = order.indexOf(toId);
         order.splice(after ? toIdx + 1 : toIdx, 0, fromId);
+        // Update categoryId based on what's now immediately above the dropped item
+        const newIdx = order.indexOf(fromId);
+        let newCategoryId = null;
+        for (let i = newIdx - 1; i >= 0; i--) {
+          const pid = order[i];
+          const pitem = state.items[pid];
+          if (!pitem || pitem.deleted) continue;
+          newCategoryId = pitem.type === 'header' ? pid : (pitem.categoryId || null);
+          break;
+        }
+        if (state.items[fromId].categoryId !== newCategoryId) {
+          state.items[fromId].categoryId = newCategoryId;
+          state.items[fromId].updatedAt = Date.now();
+          fbSyncItem(fromId);
+        }
       }
 
       save();
