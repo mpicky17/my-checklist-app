@@ -1564,6 +1564,8 @@
     // ── Layout tabs ───────────────────────────────────────────────────────────
 
     document.querySelectorAll('.layout-tab').forEach(btn => {
+      let lastTapTime = 0;
+
       btn.addEventListener('click', () => {
         if (btn.dataset.layout === state.current) return;
         state.current = btn.dataset.layout;
@@ -1571,13 +1573,13 @@
         render();
       });
 
-      btn.addEventListener('dblclick', e => {
-        e.stopPropagation();
+      function activateTabEdit() {
         const layout = btn.dataset.layout;
         const input = document.createElement('input');
         input.className = 'tab-name-input';
         input.value = state.layoutNames[layout];
         btn.replaceWith(input);
+        input.focus();
         input.select();
 
         function commit() {
@@ -1594,6 +1596,21 @@
           if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
           if (e.key === 'Escape') { input.value = state.layoutNames[layout]; input.blur(); }
         });
+      }
+
+      btn.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        activateTabEdit();
+      });
+
+      // iOS Safari does not fire dblclick on touch — detect double-tap manually
+      btn.addEventListener('touchend', e => {
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          e.preventDefault(); // cancel the subsequent click
+          activateTabEdit();
+        }
+        lastTapTime = now;
       });
     });
 
