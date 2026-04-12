@@ -572,7 +572,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v32';
+    const APP_VERSION = 'my-checklist-v33';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -732,9 +732,18 @@
           }
           render();
         }
+        let _triTouchX = 0, _triTouchY = 0;
+        leftCtrl.addEventListener('touchstart', e => {
+          _triTouchX = e.touches[0].clientX;
+          _triTouchY = e.touches[0].clientY;
+        }, { passive: true });
         leftCtrl.addEventListener('touchend', e => {
-          e.preventDefault();
-          applyTriangle();
+          const dx = e.changedTouches[0].clientX - _triTouchX;
+          const dy = e.changedTouches[0].clientY - _triTouchY;
+          if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+            e.preventDefault();
+            applyTriangle();
+          }
         });
         leftCtrl.addEventListener('click', applyTriangle);
       } else {
@@ -750,10 +759,19 @@
           fbSyncItem(id);
           if (state.hideChecked[state.current] && leftCtrl.checked) row.remove();
         }
+        let _cbTouchX = 0, _cbTouchY = 0;
+        leftCtrl.addEventListener('touchstart', e => {
+          _cbTouchX = e.touches[0].clientX;
+          _cbTouchY = e.touches[0].clientY;
+        }, { passive: true });
         leftCtrl.addEventListener('touchend', e => {
-          e.preventDefault();
-          leftCtrl.checked = !leftCtrl.checked;
-          applyCheckState();
+          const dx = e.changedTouches[0].clientX - _cbTouchX;
+          const dy = e.changedTouches[0].clientY - _cbTouchY;
+          if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+            e.preventDefault();
+            leftCtrl.checked = !leftCtrl.checked;
+            applyCheckState();
+          }
         });
         leftCtrl.addEventListener('change', applyCheckState);
       }
@@ -763,7 +781,16 @@
       input.rows = 1;
       input.value = item.text;
       if (isHeader) input.placeholder = 'Category name';
-      input.addEventListener('touchend', () => { input.focus(); });
+      let _tsTouchX = 0, _tsTouchY = 0;
+      input.addEventListener('touchstart', e => {
+        _tsTouchX = e.touches[0].clientX;
+        _tsTouchY = e.touches[0].clientY;
+      }, { passive: true });
+      input.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _tsTouchX;
+        const dy = e.changedTouches[0].clientY - _tsTouchY;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) input.focus();
+      });
       input.addEventListener('input', () => {
         state.items[id].text = input.value;
         state.items[id].updatedAt = Date.now();
@@ -1438,8 +1465,9 @@
 
     // ── Drag helpers ──────────────────────────────────────────────────────────
 
-    const SCROLL_ZONE  = 80; // px from viewport edge to begin auto-scroll
-    const SCROLL_SPEED = 10; // max px per event tick
+    const SCROLL_ZONE        = 80; // px from viewport edge to begin auto-scroll
+    const SCROLL_SPEED       = 10; // max px per event tick
+    const SCROLL_TAP_THRESHOLD = 10; // px — movement below this is treated as a purposeful tap
 
     function getDragScrollSpeed(clientY) {
       const vh = window.innerHeight;
