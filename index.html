@@ -643,7 +643,7 @@
 
     .qty-inline-input {
       width: 100%;
-      font-size: 0.8rem;
+      font-size: 16px; /* must be ≥16px to prevent iOS Safari auto-zoom */
       font-weight: 600;
       border: none;
       outline: 1.5px solid #4f46e5;
@@ -731,7 +731,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v38';
+    const APP_VERSION = 'my-checklist-v39';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
