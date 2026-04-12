@@ -558,6 +558,207 @@
       background: #4f46e5; color: #fff; border-radius: 8px;
       font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit;
     }
+
+    /* ── Qty/Fill feature ──────────────────────────────────────────────────── */
+
+    .qty-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 32px;
+      gap: 0;
+    }
+
+    .qty-plus-btn,
+    .qty-minus-btn {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      color: #4f46e5;
+      padding: 2px 4px;
+      border-radius: 4px;
+      touch-action: manipulation;
+      user-select: none;
+      font-weight: 700;
+    }
+
+    .qty-plus-btn:hover,
+    .qty-minus-btn:hover {
+      background: #f5f3ff;
+    }
+
+    .qty-wrapper.qty-controls-visible .qty-plus-btn,
+    .qty-wrapper.qty-controls-visible .qty-minus-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qty-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      min-height: 28px;
+      cursor: pointer;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .qty-cell.qty-type-number {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .qty-fill-oval {
+      width: 18px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid #1a1a1a;
+      overflow: hidden;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .qty-fill-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      transition: height 0.15s, background 0.15s;
+    }
+
+    .qty-fill-oval[data-fill="Empty"] .qty-fill-bar { height: 0%;   background: transparent; }
+    .qty-fill-oval[data-fill="Low"]   .qty-fill-bar { height: 25%;  background: #ef4444; }
+    .qty-fill-oval[data-fill="Half"]  .qty-fill-bar { height: 50%;  background: #eab308; }
+    .qty-fill-oval[data-fill="Full"]  .qty-fill-bar { height: 100%; background: #16a34a; }
+
+    /* ── Qty bottom-sheet panel ──────────────────────────────────────────── */
+
+    .qty-panel-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 500;
+    }
+
+    .qty-panel {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-radius: 16px 16px 0 0;
+      padding: 20px 20px 36px;
+      z-index: 501;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.16);
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .qty-panel-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .qty-panel-input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .qty-panel input[type="number"] {
+      flex: 1;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 1.1rem;
+      font-family: inherit;
+      color: #1a1a1a;
+      outline: none;
+      background: #fff;
+      -moz-appearance: textfield;
+    }
+
+    .qty-panel input[type="number"]::-webkit-inner-spin-button,
+    .qty-panel input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+    }
+
+    .qty-panel input[type="number"]:focus {
+      border-color: #4f46e5;
+    }
+
+    .qty-panel-confirm-btn {
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      touch-action: manipulation;
+    }
+
+    .qty-fill-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .qty-fill-btn {
+      flex: 1;
+      padding: 10px 4px;
+      border-radius: 8px;
+      border: 1.5px solid #e5e7eb;
+      background: #fff;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      touch-action: manipulation;
+      transition: opacity 0.15s;
+    }
+
+    .qty-fill-btn[data-fill="Full"]  { border-color: #16a34a; color: #16a34a; }
+    .qty-fill-btn[data-fill="Half"]  { border-color: #ca8a04; color: #ca8a04; }
+    .qty-fill-btn[data-fill="Low"]   { border-color: #ef4444; color: #ef4444; }
+    .qty-fill-btn[data-fill="Empty"] { border-color: #888;    color: #888; }
+
+    .qty-fill-btn:hover,
+    .qty-fill-btn:active { opacity: 0.75; }
+
+    @media (prefers-color-scheme: dark) {
+      .qty-cell.qty-type-number      { color: #f2f2f7; }
+      .qty-fill-oval                 { border-color: #aeaeb2; }
+      .qty-plus-btn,
+      .qty-minus-btn                 { color: #818cf8; }
+      .qty-plus-btn:hover,
+      .qty-minus-btn:hover           { background: #2c2c2e; }
+      .qty-panel                     { background: #1c1c1e; }
+      .qty-panel-title               { color: #636366; }
+      .qty-panel input[type="number"]{ background: #2c2c2e; border-color: #3a3a3c; color: #f2f2f7; }
+      .qty-panel input[type="number"]:focus { border-color: #818cf8; }
+      .qty-panel-confirm-btn         { background: #818cf8; }
+      .qty-fill-btn                  { background: #2c2c2e; border-color: #3a3a3c; }
+      .qty-fill-btn[data-fill="Full"]  { border-color: #30d158; color: #30d158; }
+      .qty-fill-btn[data-fill="Half"]  { border-color: #ffd60a; color: #ffd60a; }
+      .qty-fill-btn[data-fill="Low"]   { border-color: #ff453a; color: #ff453a; }
+      .qty-fill-btn[data-fill="Empty"] { border-color: #636366; color: #636366; }
+    }
   </style>
 </head>
 <body>
@@ -576,7 +777,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v35';
+    const APP_VERSION = 'my-checklist-v36';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -609,6 +810,10 @@
     let touchDragId = null;
     let touchGhost = null;
     let touchDragRow = null;
+
+    // Qty/Fill panel state
+    let qtyPanelItemId = null;
+    let qtyControlsItemId = null;
 
     // ── Persistence ──────────────────────────────────────────────────────────
 
@@ -645,6 +850,8 @@
             const inC = oldCat ? (state.layouts.C || []).includes(oldCat) : false;
             state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null, C: inC ? oldCat : null };
           }
+          if (!state.items[id].hasOwnProperty('qtyType'))  state.items[id].qtyType  = null;
+          if (!state.items[id].hasOwnProperty('qtyValue')) state.items[id].qtyValue = null;
         });
         lastSyncedLayoutOrder = { A: [...state.layouts.A], B: [...state.layouts.B], C: [...(state.layouts.C || [])] };
       } else {
@@ -1019,6 +1226,9 @@
       // ── Assemble row ──────────────────────────────────────────────────────
       row.appendChild(handle);
       row.appendChild(leftCtrl);
+      if (!isHeader) {
+        row.appendChild(createQtyWrapper(id));
+      }
       row.appendChild(input);
       if (!isHeader) {
         const catBtn = document.createElement('button');
@@ -1089,9 +1299,9 @@
       const row = document.createElement('div');
       row.className = 'row add-row';
 
-      // Spacer to align with text inputs (handle width + checkbox width + gaps)
+      // Spacer to align with text inputs (handle width + checkbox width + qty-wrapper width + gaps)
       const spacer = document.createElement('div');
-      spacer.style.cssText = 'width: 40px; flex-shrink: 0;';
+      spacer.style.cssText = 'width: 72px; flex-shrink: 0;';
 
       const input = document.createElement('input');
       input.type = 'text';
@@ -1153,7 +1363,7 @@
           ? afterId
           : ((afterItem.categoryIds && afterItem.categoryIds[state.current]) || null);
       }
-      state.items[id] = { type: 'item', text: '', checked: false, updatedAt: Date.now(), deleted: false, categoryIds: newCategoryIds };
+      state.items[id] = { type: 'item', text: '', checked: false, updatedAt: Date.now(), deleted: false, categoryIds: newCategoryIds, qtyType: null, qtyValue: null };
 
       const current = state.layouts[state.current];
       current.splice(current.indexOf(afterId) + 1, 0, id);
@@ -1246,7 +1456,7 @@
     function commitAdd(text) {
       if (!text) return;
       const id = genId();
-      state.items[id] = { type: 'item', text, checked: false, updatedAt: Date.now(), deleted: false, categoryIds: { A: null, B: null, C: null } };
+      state.items[id] = { type: 'item', text, checked: false, updatedAt: Date.now(), deleted: false, categoryIds: { A: null, B: null, C: null }, qtyType: null, qtyValue: null };
       state.layouts.A.push(id);
       state.layouts.B.push(id);
       state.layouts.C.push(id);
@@ -1455,6 +1665,307 @@
       });
 
       dialog.querySelector('.btn-cancel').addEventListener('click', () => overlay.remove());
+    }
+
+    // ── Qty/Fill helpers ──────────────────────────────────────────────────────
+
+    function refreshQtyCell(cell, qtyType, qtyValue) {
+      cell.textContent = '';
+      cell.className = 'qty-cell';
+      if (qtyType === 'number') {
+        cell.classList.add('qty-type-number');
+        cell.textContent = (qtyValue === null || qtyValue === undefined) ? '' : String(qtyValue);
+      } else if (qtyType === 'fill') {
+        const oval = document.createElement('div');
+        oval.className = 'qty-fill-oval';
+        oval.dataset.fill = qtyValue || 'Empty';
+        const bar = document.createElement('div');
+        bar.className = 'qty-fill-bar';
+        oval.appendChild(bar);
+        cell.appendChild(oval);
+      }
+    }
+
+    function refreshQtyButtons(plusBtn, minusBtn, qtyType, qtyValue) {
+      if (qtyType === 'number') {
+        plusBtn.style.visibility  = '';
+        minusBtn.style.visibility = (qtyValue === 0) ? 'hidden' : '';
+      } else if (qtyType === 'fill') {
+        plusBtn.style.visibility  = (qtyValue === 'Full')  ? 'hidden' : '';
+        minusBtn.style.visibility = (qtyValue === 'Empty') ? 'hidden' : '';
+      } else {
+        plusBtn.style.visibility  = 'hidden';
+        minusBtn.style.visibility = 'hidden';
+      }
+    }
+
+    function hideAllQtyControls() {
+      document.querySelectorAll('.qty-wrapper.qty-controls-visible').forEach(w => {
+        w.classList.remove('qty-controls-visible');
+      });
+      qtyControlsItemId = null;
+      document.removeEventListener('touchstart', dismissQtyControlsOnOutsideTap);
+      document.removeEventListener('mousedown',  dismissQtyControlsOnOutsideTap);
+    }
+
+    function dismissQtyControlsOnOutsideTap(e) {
+      if (e.target.closest('.qty-wrapper')) return;
+      if (document.querySelector('.qty-panel-backdrop')) return;
+      hideAllQtyControls();
+    }
+
+    function showQtyControls(id, wrapper, plusBtn, minusBtn) {
+      hideAllQtyControls();
+      qtyControlsItemId = id;
+      wrapper.classList.add('qty-controls-visible');
+      const item = state.items[id];
+      if (item) refreshQtyButtons(plusBtn, minusBtn, item.qtyType, item.qtyValue);
+      setTimeout(() => {
+        document.addEventListener('touchstart', dismissQtyControlsOnOutsideTap, { passive: true });
+        document.addEventListener('mousedown',  dismissQtyControlsOnOutsideTap);
+      }, 0);
+    }
+
+    function closeQtyPanel() {
+      document.querySelectorAll('.qty-panel-backdrop, .qty-panel').forEach(el => el.remove());
+      qtyPanelItemId = null;
+    }
+
+    function commitQtyValue(id, type, value, cell, plusBtn, minusBtn) {
+      const item = state.items[id];
+      if (!item) return;
+      item.qtyType  = type;
+      item.qtyValue = value;
+      item.updatedAt = Date.now();
+      save();
+      fbSyncItem(id);
+      refreshQtyCell(cell, type, value);
+      hideAllQtyControls();
+    }
+
+    function openQtyPanel(id, wrapper, cell, plusBtn, minusBtn) {
+      closeQtyPanel();
+      qtyPanelItemId = id;
+      const item = state.items[id];
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'qty-panel-backdrop';
+
+      const panel = document.createElement('div');
+      panel.className = 'qty-panel';
+
+      const title = document.createElement('div');
+      title.className = 'qty-panel-title';
+      title.textContent = 'Set Quantity / Fill Level';
+
+      const inputRow = document.createElement('div');
+      inputRow.className = 'qty-panel-input-row';
+
+      const numInput = document.createElement('input');
+      numInput.type = 'number';
+      numInput.inputMode = 'numeric';
+      numInput.placeholder = 'Enter number';
+      numInput.min = '0';
+      if (item && item.qtyType === 'number' && item.qtyValue !== null) {
+        numInput.value = String(item.qtyValue);
+      }
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'qty-panel-confirm-btn';
+      confirmBtn.textContent = 'Set';
+
+      inputRow.appendChild(numInput);
+      inputRow.appendChild(confirmBtn);
+
+      const fillBtnsRow = document.createElement('div');
+      fillBtnsRow.className = 'qty-fill-btns';
+
+      ['Full', 'Half', 'Low', 'Empty'].forEach(level => {
+        const btn = document.createElement('button');
+        btn.className = 'qty-fill-btn';
+        btn.dataset.fill = level;
+        btn.textContent = level;
+        let _fbTX = 0, _fbTY = 0;
+        btn.addEventListener('touchstart', e => {
+          _fbTX = e.touches[0].clientX;
+          _fbTY = e.touches[0].clientY;
+        }, { passive: true });
+        btn.addEventListener('touchend', e => {
+          const dx = e.changedTouches[0].clientX - _fbTX;
+          const dy = e.changedTouches[0].clientY - _fbTY;
+          if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+            e.preventDefault();
+            commitQtyValue(id, 'fill', level, cell, plusBtn, minusBtn);
+            closeQtyPanel();
+          }
+        });
+        btn.addEventListener('click', () => {
+          commitQtyValue(id, 'fill', level, cell, plusBtn, minusBtn);
+          closeQtyPanel();
+        });
+        fillBtnsRow.appendChild(btn);
+      });
+
+      function confirmNumber() {
+        const raw = numInput.value.trim();
+        if (raw === '' || isNaN(Number(raw))) return;
+        const val = Math.max(0, Math.floor(Number(raw)));
+        commitQtyValue(id, 'number', val, cell, plusBtn, minusBtn);
+        closeQtyPanel();
+      }
+
+      confirmBtn.addEventListener('click', confirmNumber);
+      numInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); confirmNumber(); }
+      });
+
+      let _bdTX = 0, _bdTY = 0;
+      backdrop.addEventListener('touchstart', e => {
+        _bdTX = e.touches[0].clientX;
+        _bdTY = e.touches[0].clientY;
+      }, { passive: true });
+      backdrop.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _bdTX;
+        const dy = e.changedTouches[0].clientY - _bdTY;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          e.preventDefault();
+          closeQtyPanel();
+        }
+      });
+      backdrop.addEventListener('click', closeQtyPanel);
+
+      panel.appendChild(title);
+      panel.appendChild(inputRow);
+      panel.appendChild(fillBtnsRow);
+
+      document.body.appendChild(backdrop);
+      document.body.appendChild(panel);
+
+      setTimeout(() => numInput.focus(), 50);
+    }
+
+    function createQtyWrapper(id) {
+      const item = state.items[id];
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'qty-wrapper';
+      wrapper.dataset.qtyId = id;
+
+      const plusBtn = document.createElement('button');
+      plusBtn.className = 'qty-plus-btn';
+      plusBtn.textContent = '+';
+      plusBtn.title = 'Increase';
+
+      const cell = document.createElement('div');
+      cell.className = 'qty-cell';
+      refreshQtyCell(cell, item ? item.qtyType : null, item ? item.qtyValue : null);
+
+      const minusBtn = document.createElement('button');
+      minusBtn.className = 'qty-minus-btn';
+      minusBtn.textContent = '\u2212';
+      minusBtn.title = 'Decrease';
+
+      // Plus button
+      function applyPlus() {
+        const it = state.items[id];
+        if (!it) return;
+        if (it.qtyType === 'number') {
+          it.qtyValue = (it.qtyValue || 0) + 1;
+        } else if (it.qtyType === 'fill') {
+          const levels = ['Empty', 'Low', 'Half', 'Full'];
+          const idx = levels.indexOf(it.qtyValue);
+          if (idx < levels.length - 1) it.qtyValue = levels[idx + 1];
+        }
+        it.updatedAt = Date.now();
+        save();
+        fbSyncItem(id);
+        refreshQtyCell(cell, it.qtyType, it.qtyValue);
+        refreshQtyButtons(plusBtn, minusBtn, it.qtyType, it.qtyValue);
+      }
+
+      let _pTX = 0, _pTY = 0;
+      plusBtn.addEventListener('touchstart', e => {
+        _pTX = e.touches[0].clientX;
+        _pTY = e.touches[0].clientY;
+      }, { passive: true });
+      plusBtn.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _pTX;
+        const dy = e.changedTouches[0].clientY - _pTY;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          e.preventDefault();
+          e.stopPropagation();
+          applyPlus();
+        }
+      });
+      plusBtn.addEventListener('click', e => { e.stopPropagation(); applyPlus(); });
+
+      // Minus button
+      function applyMinus() {
+        const it = state.items[id];
+        if (!it) return;
+        if (it.qtyType === 'number') {
+          it.qtyValue = Math.max(0, (it.qtyValue || 0) - 1);
+        } else if (it.qtyType === 'fill') {
+          const levels = ['Empty', 'Low', 'Half', 'Full'];
+          const idx = levels.indexOf(it.qtyValue);
+          if (idx > 0) it.qtyValue = levels[idx - 1];
+        }
+        it.updatedAt = Date.now();
+        save();
+        fbSyncItem(id);
+        refreshQtyCell(cell, it.qtyType, it.qtyValue);
+        refreshQtyButtons(plusBtn, minusBtn, it.qtyType, it.qtyValue);
+      }
+
+      let _mTX = 0, _mTY = 0;
+      minusBtn.addEventListener('touchstart', e => {
+        _mTX = e.touches[0].clientX;
+        _mTY = e.touches[0].clientY;
+      }, { passive: true });
+      minusBtn.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _mTX;
+        const dy = e.changedTouches[0].clientY - _mTY;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          e.preventDefault();
+          e.stopPropagation();
+          applyMinus();
+        }
+      });
+      minusBtn.addEventListener('click', e => { e.stopPropagation(); applyMinus(); });
+
+      // Cell tap — three states
+      function applyCellTap() {
+        const it = state.items[id];
+        if (!it) return;
+        if (it.qtyType === null) {
+          openQtyPanel(id, wrapper, cell, plusBtn, minusBtn);
+        } else if (wrapper.classList.contains('qty-controls-visible')) {
+          openQtyPanel(id, wrapper, cell, plusBtn, minusBtn);
+        } else {
+          showQtyControls(id, wrapper, plusBtn, minusBtn);
+        }
+      }
+
+      let _cTX = 0, _cTY = 0;
+      cell.addEventListener('touchstart', e => {
+        _cTX = e.touches[0].clientX;
+        _cTY = e.touches[0].clientY;
+      }, { passive: true });
+      cell.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _cTX;
+        const dy = e.changedTouches[0].clientY - _cTY;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          e.preventDefault();
+          e.stopPropagation();
+          applyCellTap();
+        }
+      });
+      cell.addEventListener('click', e => { e.stopPropagation(); applyCellTap(); });
+
+      wrapper.appendChild(plusBtn);
+      wrapper.appendChild(cell);
+      wrapper.appendChild(minusBtn);
+      return wrapper;
     }
 
     // Returns true if targetId is explicitly assigned to the currently-dragged header
@@ -1809,6 +2320,8 @@
               const inC = oldCat ? (state.layouts.C || []).includes(oldCat) : false;
               state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null, C: inC ? oldCat : null };
             }
+            if (!state.items[id].hasOwnProperty('qtyType'))  state.items[id].qtyType  = null;
+            if (!state.items[id].hasOwnProperty('qtyValue')) state.items[id].qtyValue = null;
             changed = true;
           }
         });
@@ -1932,6 +2445,8 @@
                     const inC = oldCat ? (state.layouts.C || []).includes(oldCat) : false;
                     state.items[id].categoryIds = { A: inA ? oldCat : null, B: inB ? oldCat : null, C: inC ? oldCat : null };
                   }
+                  if (!state.items[id].hasOwnProperty('qtyType'))  state.items[id].qtyType  = null;
+                  if (!state.items[id].hasOwnProperty('qtyValue')) state.items[id].qtyValue = null;
                 });
                 lastSyncedLayoutOrder = {
                   A: [...(state.layouts.A || [])],
