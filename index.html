@@ -239,6 +239,10 @@
       .drag-handle {
         visibility: visible;
       }
+      /* Suppress iOS hover-on-tap from revealing the delete button during scroll */
+      .row:hover .delete-btn { visibility: hidden; }
+      /* Show it only when a confirmed (non-scroll) tap has occurred */
+      .row.show-ctrl .delete-btn { visibility: visible; }
     }
 
     .sync-status {
@@ -572,7 +576,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v33';
+    const APP_VERSION = 'my-checklist-v34';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1036,10 +1040,19 @@
             showCategoryMenu(id, catBtn);
           }
         }
+        let _catTouchX = 0, _catTouchY = 0;
+        catBtn.addEventListener('touchstart', e => {
+          _catTouchX = e.touches[0].clientX;
+          _catTouchY = e.touches[0].clientY;
+        }, { passive: true });
         catBtn.addEventListener('touchend', e => {
-          e.preventDefault();
-          e.stopPropagation();
-          applyCatBtn();
+          const dx = e.changedTouches[0].clientX - _catTouchX;
+          const dy = e.changedTouches[0].clientY - _catTouchY;
+          if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+            e.preventDefault();
+            e.stopPropagation();
+            applyCatBtn();
+          }
         });
         catBtn.addEventListener('click', e => {
           e.stopPropagation();
@@ -1047,6 +1060,26 @@
         });
         row.appendChild(catBtn);
       }
+      // ── Show delete button on confirmed tap (not scroll) ─────────────────
+      let _rowTouchX = 0, _rowTouchY = 0;
+      row.addEventListener('touchstart', e => {
+        _rowTouchX = e.touches[0].clientX;
+        _rowTouchY = e.touches[0].clientY;
+      }, { passive: true });
+      row.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _rowTouchX;
+        const dy = e.changedTouches[0].clientY - _rowTouchY;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          document.querySelectorAll('.row.show-ctrl').forEach(r => r.classList.remove('show-ctrl'));
+          row.classList.add('show-ctrl');
+          setTimeout(() => {
+            document.addEventListener('touchstart', function dismissCtrl() {
+              document.querySelectorAll('.row.show-ctrl').forEach(r => r.classList.remove('show-ctrl'));
+            }, { once: true, passive: true });
+          }, 0);
+        }
+      });
+
       row.appendChild(del);
       return row;
     }
