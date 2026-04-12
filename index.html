@@ -576,7 +576,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v34';
+    const APP_VERSION = 'my-checklist-v35';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -785,6 +785,7 @@
       input.rows = 1;
       input.value = item.text;
       if (isHeader) input.placeholder = 'Category name';
+      input.addEventListener('focus', () => { _lastFocusTime = Date.now(); });
       let _tsTouchX = 0, _tsTouchY = 0;
       input.addEventListener('touchstart', e => {
         _tsTouchX = e.touches[0].clientX;
@@ -1615,6 +1616,25 @@
         });
       });
     }
+
+    // ── Dismiss keyboard on scroll or outside tap ─────────────────────────────
+
+    let _lastFocusTime = 0;
+
+    // Blur the active textarea when the page scrolls (user is scrolling, not typing).
+    // 300 ms grace period ignores the automatic scroll iOS does when the keyboard appears.
+    window.addEventListener('scroll', () => {
+      if (Date.now() - _lastFocusTime < 300) return;
+      if (document.activeElement?.tagName === 'TEXTAREA') document.activeElement.blur();
+    }, { passive: true });
+
+    // Blur the active textarea when the user taps anywhere outside it.
+    // This covers checkbox taps, category-button taps, and bare row/page taps.
+    document.addEventListener('touchstart', e => {
+      if (document.activeElement?.tagName === 'TEXTAREA' && !e.target.closest('textarea')) {
+        document.activeElement.blur();
+      }
+    }, { passive: true });
 
     // ── Mouse drag auto-scroll ────────────────────────────────────────────────
 
