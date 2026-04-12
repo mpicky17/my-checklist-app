@@ -217,11 +217,13 @@
       transition: color 0.15s, background 0.15s;
       flex-shrink: 0;
       visibility: hidden;
+      pointer-events: none;
       touch-action: manipulation;
     }
 
     .row:hover .delete-btn {
       visibility: visible;
+      pointer-events: auto;
     }
 
     .delete-btn:hover {
@@ -242,7 +244,7 @@
       /* Suppress iOS hover-on-tap from revealing the delete button during scroll */
       .row:hover .delete-btn { visibility: hidden; }
       /* Show it only when a confirmed (non-scroll) tap has occurred */
-      .row.show-ctrl .delete-btn { visibility: visible; }
+      .row.show-ctrl .delete-btn { visibility: visible; pointer-events: auto; }
     }
 
     .sync-status {
@@ -731,7 +733,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v39';
+    const APP_VERSION = 'my-checklist-v40';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1239,7 +1241,8 @@
           document.querySelectorAll('.row.show-ctrl').forEach(r => r.classList.remove('show-ctrl'));
           row.classList.add('show-ctrl');
           setTimeout(() => {
-            document.addEventListener('touchstart', function dismissCtrl() {
+            document.addEventListener('touchstart', function dismissCtrl(e) {
+              if (e.target.closest('.delete-btn')) return;
               document.querySelectorAll('.row.show-ctrl').forEach(r => r.classList.remove('show-ctrl'));
             }, { once: true, passive: true });
           }, 0);
