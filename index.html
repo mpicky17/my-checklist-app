@@ -23,7 +23,7 @@
       min-height: 100vh;
       display: flex;
       justify-content: center;
-      padding: 48px 16px;
+      padding: 48px 6px;
     }
 
     .card {
@@ -32,7 +32,7 @@
       box-shadow: 0 2px 16px rgba(0,0,0,0.08);
       width: 100%;
       max-width: 640px;
-      padding: 32px;
+      padding: 32px 10px;
       height: fit-content;
     }
 
@@ -639,125 +639,79 @@
     .qty-fill-oval[data-fill="Half"]  .qty-fill-bar { height: 50%;  background: #eab308; }
     .qty-fill-oval[data-fill="Full"]  .qty-fill-bar { height: 100%; background: #16a34a; }
 
-    /* ── Qty bottom-sheet panel ──────────────────────────────────────────── */
+    /* ── Qty inline editing & fill level overlay ────────────────────────── */
 
-    .qty-panel-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.35);
-      z-index: 500;
-    }
-
-    .qty-panel {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: #fff;
-      border-radius: 16px 16px 0 0;
-      padding: 20px 20px 36px;
-      z-index: 501;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      box-shadow: 0 -4px 24px rgba(0,0,0,0.16);
-      max-width: 640px;
-      margin: 0 auto;
-    }
-
-    .qty-panel-title {
-      font-size: 0.875rem;
+    .qty-inline-input {
+      width: 100%;
+      font-size: 0.8rem;
       font-weight: 600;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .qty-panel-input-row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .qty-panel input[type="number"] {
-      flex: 1;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 1.1rem;
-      font-family: inherit;
-      color: #1a1a1a;
-      outline: none;
-      background: #fff;
+      border: none;
+      outline: 1.5px solid #4f46e5;
+      background: #f5f3ff;
+      border-radius: 4px;
+      text-align: center;
+      padding: 2px 1px;
       -moz-appearance: textfield;
+      color: #1a1a1a;
+      font-family: inherit;
     }
 
-    .qty-panel input[type="number"]::-webkit-inner-spin-button,
-    .qty-panel input[type="number"]::-webkit-outer-spin-button {
+    .qty-inline-input::-webkit-inner-spin-button,
+    .qty-inline-input::-webkit-outer-spin-button {
       -webkit-appearance: none;
     }
 
-    .qty-panel input[type="number"]:focus {
-      border-color: #4f46e5;
-    }
-
-    .qty-panel-confirm-btn {
-      background: #4f46e5;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 18px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: inherit;
-      touch-action: manipulation;
-    }
-
-    .qty-fill-btns {
+    /* Fill-level buttons overlay — positioned fixed to the left of the qty cell */
+    .qty-fill-overlay {
+      position: fixed;
+      z-index: 502;
       display: flex;
-      gap: 8px;
+      flex-direction: column;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+      pointer-events: auto;
     }
 
-    .qty-fill-btn {
-      flex: 1;
-      padding: 10px 4px;
-      border-radius: 8px;
-      border: 1.5px solid #e5e7eb;
-      background: #fff;
-      font-size: 0.875rem;
-      font-weight: 600;
+    .qty-fill-overlay-btn {
+      border: none;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      font-size: 0.7rem;
+      font-weight: 700;
       cursor: pointer;
       font-family: inherit;
       touch-action: manipulation;
-      transition: opacity 0.15s;
+      transition: opacity 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      width: 100%;
+      user-select: none;
+      flex-shrink: 0;
     }
 
-    .qty-fill-btn[data-fill="Full"]  { border-color: #16a34a; color: #16a34a; }
-    .qty-fill-btn[data-fill="Half"]  { border-color: #ca8a04; color: #ca8a04; }
-    .qty-fill-btn[data-fill="Low"]   { border-color: #ef4444; color: #ef4444; }
-    .qty-fill-btn[data-fill="Empty"] { border-color: #888;    color: #888; }
+    .qty-fill-overlay-btn:last-child  { border-bottom: none; }
+    .qty-fill-overlay-btn:hover,
+    .qty-fill-overlay-btn:active       { opacity: 0.75; }
 
-    .qty-fill-btn:hover,
-    .qty-fill-btn:active { opacity: 0.75; }
+    .qty-fill-overlay-btn[data-fill="Full"]  { background: #f0fdf4; color: #16a34a; }
+    .qty-fill-overlay-btn[data-fill="Half"]  { background: #fefce8; color: #ca8a04; }
+    .qty-fill-overlay-btn[data-fill="Low"]   { background: #fef2f2; color: #ef4444; }
+    .qty-fill-overlay-btn[data-fill="Empty"] { background: #f9fafb; color: #6b7280; }
 
     @media (prefers-color-scheme: dark) {
-      .qty-cell.qty-type-number      { color: #f2f2f7; }
-      .qty-fill-oval                 { border-color: #aeaeb2; }
+      .qty-cell.qty-type-number       { color: #f2f2f7; }
+      .qty-fill-oval                  { border-color: #aeaeb2; }
       .qty-plus-btn,
-      .qty-minus-btn                 { color: #818cf8; }
+      .qty-minus-btn                  { color: #818cf8; }
       .qty-plus-btn:hover,
-      .qty-minus-btn:hover           { background: #2c2c2e; }
-      .qty-panel                     { background: #1c1c1e; }
-      .qty-panel-title               { color: #636366; }
-      .qty-panel input[type="number"]{ background: #2c2c2e; border-color: #3a3a3c; color: #f2f2f7; }
-      .qty-panel input[type="number"]:focus { border-color: #818cf8; }
-      .qty-panel-confirm-btn         { background: #818cf8; }
-      .qty-fill-btn                  { background: #2c2c2e; border-color: #3a3a3c; }
-      .qty-fill-btn[data-fill="Full"]  { border-color: #30d158; color: #30d158; }
-      .qty-fill-btn[data-fill="Half"]  { border-color: #ffd60a; color: #ffd60a; }
-      .qty-fill-btn[data-fill="Low"]   { border-color: #ff453a; color: #ff453a; }
-      .qty-fill-btn[data-fill="Empty"] { border-color: #636366; color: #636366; }
+      .qty-minus-btn:hover            { background: #2c2c2e; }
+      .qty-inline-input               { background: #2c2c2e; outline-color: #818cf8; color: #f2f2f7; }
+      .qty-fill-overlay-btn[data-fill="Full"]  { background: #052e16; color: #30d158; }
+      .qty-fill-overlay-btn[data-fill="Half"]  { background: #1a1200; color: #ffd60a; }
+      .qty-fill-overlay-btn[data-fill="Low"]   { background: #2c0a0a; color: #ff453a; }
+      .qty-fill-overlay-btn[data-fill="Empty"] { background: #1c1c1e; color: #636366; }
     }
   </style>
 </head>
@@ -777,7 +731,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v36';
+    const APP_VERSION = 'my-checklist-v37';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -814,6 +768,7 @@
     // Qty/Fill panel state
     let qtyPanelItemId = null;
     let qtyControlsItemId = null;
+    let _qtyFillPending = null; // level string when fill button mousedown/touchstart in progress
 
     // ── Persistence ──────────────────────────────────────────────────────────
 
@@ -1299,9 +1254,9 @@
       const row = document.createElement('div');
       row.className = 'row add-row';
 
-      // Spacer to align with text inputs (handle width + checkbox width + qty-wrapper width + gaps)
+      // Spacer to align with text inputs (drag-handle + gap + checkbox + gap + qty-wrapper + gap)
       const spacer = document.createElement('div');
-      spacer.style.cssText = 'width: 72px; flex-shrink: 0;';
+      spacer.style.cssText = 'width: 88px; flex-shrink: 0;';
 
       const input = document.createElement('input');
       input.type = 'text';
@@ -1710,7 +1665,7 @@
 
     function dismissQtyControlsOnOutsideTap(e) {
       if (e.target.closest('.qty-wrapper')) return;
-      if (document.querySelector('.qty-panel-backdrop')) return;
+      if (e.target.closest('.qty-fill-overlay')) return;
       hideAllQtyControls();
     }
 
@@ -1726,8 +1681,14 @@
       }, 0);
     }
 
-    function closeQtyPanel() {
-      document.querySelectorAll('.qty-panel-backdrop, .qty-panel').forEach(el => el.remove());
+    function hideFillButtons() {
+      const el = document.getElementById('qty-fill-overlay');
+      if (el) el.remove();
+    }
+
+    function closeQtyEdit() {
+      hideFillButtons();
+      _qtyFillPending = null;
       qtyPanelItemId = null;
     }
 
@@ -1743,105 +1704,142 @@
       hideAllQtyControls();
     }
 
-    function openQtyPanel(id, wrapper, cell, plusBtn, minusBtn) {
-      closeQtyPanel();
-      qtyPanelItemId = id;
-      const item = state.items[id];
+    function showFillButtons(id, cell, plusBtn, minusBtn) {
+      hideFillButtons();
+      const rowEl = cell.closest('.row');
+      if (!rowEl) return;
 
-      const backdrop = document.createElement('div');
-      backdrop.className = 'qty-panel-backdrop';
+      const rowRect  = rowEl.getBoundingClientRect();
+      const cellRect = cell.getBoundingClientRect();
+      const rowH     = rowRect.height;
+      const halfH    = rowH / 2;
+      const W        = 52; // overlay width in px
+      const GAP      = 5;
 
-      const panel = document.createElement('div');
-      panel.className = 'qty-panel';
+      // The 4 buttons span 2 rows: Full=bottom-half of row above,
+      // Half=top-half of this row, Low=bottom-half of this row, Empty=top-half of row below.
+      // Center point is the row center; overlay starts 1 row-height above that center.
+      const rowCenterY = rowRect.top + rowH / 2;
+      const overlayTop = rowCenterY - rowH;
+      const left       = Math.max(2, cellRect.left - GAP - W);
 
-      const title = document.createElement('div');
-      title.className = 'qty-panel-title';
-      title.textContent = 'Set Quantity / Fill Level';
-
-      const inputRow = document.createElement('div');
-      inputRow.className = 'qty-panel-input-row';
-
-      const numInput = document.createElement('input');
-      numInput.type = 'number';
-      numInput.inputMode = 'numeric';
-      numInput.placeholder = 'Enter number';
-      numInput.min = '0';
-      if (item && item.qtyType === 'number' && item.qtyValue !== null) {
-        numInput.value = String(item.qtyValue);
-      }
-
-      const confirmBtn = document.createElement('button');
-      confirmBtn.className = 'qty-panel-confirm-btn';
-      confirmBtn.textContent = 'Set';
-
-      inputRow.appendChild(numInput);
-      inputRow.appendChild(confirmBtn);
-
-      const fillBtnsRow = document.createElement('div');
-      fillBtnsRow.className = 'qty-fill-btns';
+      const overlay = document.createElement('div');
+      overlay.className = 'qty-fill-overlay';
+      overlay.id = 'qty-fill-overlay';
+      overlay.style.top    = overlayTop + 'px';
+      overlay.style.left   = left + 'px';
+      overlay.style.width  = W + 'px';
+      overlay.style.height = (rowH * 2) + 'px';
 
       ['Full', 'Half', 'Low', 'Empty'].forEach(level => {
         const btn = document.createElement('button');
-        btn.className = 'qty-fill-btn';
+        btn.className = 'qty-fill-overlay-btn';
         btn.dataset.fill = level;
         btn.textContent = level;
-        let _fbTX = 0, _fbTY = 0;
+        btn.style.height = halfH + 'px';
+
+        let _fTX = 0, _fTY = 0, _fTouched = false;
+
+        btn.addEventListener('mousedown', () => { _qtyFillPending = level; });
         btn.addEventListener('touchstart', e => {
-          _fbTX = e.touches[0].clientX;
-          _fbTY = e.touches[0].clientY;
+          _fTX = e.touches[0].clientX;
+          _fTY = e.touches[0].clientY;
+          _fTouched = false;
+          _qtyFillPending = level;
         }, { passive: true });
         btn.addEventListener('touchend', e => {
-          const dx = e.changedTouches[0].clientX - _fbTX;
-          const dy = e.changedTouches[0].clientY - _fbTY;
+          const dx = e.changedTouches[0].clientX - _fTX;
+          const dy = e.changedTouches[0].clientY - _fTY;
           if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
             e.preventDefault();
+            _fTouched = true;
+            _qtyFillPending = null;
             commitQtyValue(id, 'fill', level, cell, plusBtn, minusBtn);
-            closeQtyPanel();
+            closeQtyEdit();
+          } else {
+            _qtyFillPending = null;
           }
         });
         btn.addEventListener('click', () => {
+          if (_fTouched) { _fTouched = false; return; } // already handled by touchend
+          _qtyFillPending = null;
           commitQtyValue(id, 'fill', level, cell, plusBtn, minusBtn);
-          closeQtyPanel();
+          closeQtyEdit();
         });
-        fillBtnsRow.appendChild(btn);
+
+        overlay.appendChild(btn);
       });
 
-      function confirmNumber() {
-        const raw = numInput.value.trim();
-        if (raw === '' || isNaN(Number(raw))) return;
-        const val = Math.max(0, Math.floor(Number(raw)));
-        commitQtyValue(id, 'number', val, cell, plusBtn, minusBtn);
-        closeQtyPanel();
+      document.body.appendChild(overlay);
+    }
+
+    function openQtyEdit(id, wrapper, cell, plusBtn, minusBtn) {
+      // If another item is being edited, close it first
+      if (qtyPanelItemId && qtyPanelItemId !== id) {
+        closeQtyEdit();
+      }
+      qtyPanelItemId = id;
+      _qtyFillPending = null;
+      hideAllQtyControls();
+
+      const item = state.items[id];
+
+      // Transform cell into inline number input
+      cell.textContent = '';
+      cell.className = 'qty-cell qty-cell-editing';
+
+      const input = document.createElement('input');
+      input.type      = 'number';
+      input.inputMode = 'numeric';
+      input.min       = '0';
+      input.className = 'qty-inline-input';
+      if (item && item.qtyType === 'number' && item.qtyValue !== null) {
+        input.value = String(item.qtyValue);
+      }
+      cell.appendChild(input);
+
+      // Show fill buttons to the left
+      showFillButtons(id, cell, plusBtn, minusBtn);
+
+      setTimeout(() => { input.focus(); input.select(); }, 30);
+
+      function commitEdit() {
+        // Guard: if already closed (e.g. fill button committed first) do nothing
+        if (qtyPanelItemId !== id) return;
+        // Guard: fill button interaction in progress — it handles commit
+        if (_qtyFillPending !== null) return;
+
+        const raw = (input.value || '').trim();
+        if (raw !== '' && !isNaN(Number(raw))) {
+          const val = Math.max(0, Math.floor(Number(raw)));
+          commitQtyValue(id, 'number', val, cell, plusBtn, minusBtn);
+        } else {
+          // No valid number — restore display without changing state
+          const it = state.items[id];
+          refreshQtyCell(cell, it ? it.qtyType : null, it ? it.qtyValue : null);
+        }
+        hideFillButtons();
+        qtyPanelItemId = null;
       }
 
-      confirmBtn.addEventListener('click', confirmNumber);
-      numInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); confirmNumber(); }
-      });
+      input.addEventListener('blur', commitEdit);
 
-      let _bdTX = 0, _bdTY = 0;
-      backdrop.addEventListener('touchstart', e => {
-        _bdTX = e.touches[0].clientX;
-        _bdTY = e.touches[0].clientY;
-      }, { passive: true });
-      backdrop.addEventListener('touchend', e => {
-        const dx = e.changedTouches[0].clientX - _bdTX;
-        const dy = e.changedTouches[0].clientY - _bdTY;
-        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
           e.preventDefault();
-          closeQtyPanel();
+          input.blur(); // triggers commitEdit via blur
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          const eid = qtyPanelItemId;
+          qtyPanelItemId = null;
+          _qtyFillPending = null;
+          hideFillButtons();
+          const it = state.items[eid];
+          if (it) refreshQtyCell(cell, it.qtyType, it.qtyValue);
+          input.blur();
         }
       });
-      backdrop.addEventListener('click', closeQtyPanel);
-
-      panel.appendChild(title);
-      panel.appendChild(inputRow);
-      panel.appendChild(fillBtnsRow);
-
-      document.body.appendChild(backdrop);
-      document.body.appendChild(panel);
-
-      setTimeout(() => numInput.focus(), 50);
     }
 
     function createQtyWrapper(id) {
@@ -1938,9 +1936,9 @@
         const it = state.items[id];
         if (!it) return;
         if (it.qtyType === null) {
-          openQtyPanel(id, wrapper, cell, plusBtn, minusBtn);
+          openQtyEdit(id, wrapper, cell, plusBtn, minusBtn);
         } else if (wrapper.classList.contains('qty-controls-visible')) {
-          openQtyPanel(id, wrapper, cell, plusBtn, minusBtn);
+          openQtyEdit(id, wrapper, cell, plusBtn, minusBtn);
         } else {
           showQtyControls(id, wrapper, plusBtn, minusBtn);
         }
