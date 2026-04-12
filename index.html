@@ -731,7 +731,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v37';
+    const APP_VERSION = 'my-checklist-v38';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1801,7 +1801,7 @@
       // Show fill buttons to the left
       showFillButtons(id, cell, plusBtn, minusBtn);
 
-      setTimeout(() => { input.focus(); input.select(); }, 30);
+      input.focus();
 
       function commitEdit() {
         // Guard: if already closed (e.g. fill button committed first) do nothing
