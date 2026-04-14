@@ -884,7 +884,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v48';
+    const APP_VERSION = 'my-checklist-v49';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2221,9 +2221,10 @@
         // Filter discount lines (000037 prefix) — belt-and-suspenders in case prompt missed one
         const filtered = result.items.filter(i => !String(i.item_code).trim().startsWith('000037'));
 
-        // thisLineCount sums quantities so that an item returned as {quantity:2} by the
-        // API (consolidated from two receipt lines) counts as 2, matching Items Sold.
-        const thisLineCount = filtered.length; // Costco's Items Sold = receipt lines, not units
+        // thisLineCount = total quantity across all items in this scan.
+        // When the API returns {quantity:2} for a code that appeared twice on the receipt,
+        // this counts as 2, matching Costco's "Items Sold" figure.
+        const thisLineCount = filtered.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0);
 
         // Phase 1: consolidate THIS scan — sum quantities when the same code appears
         // multiple times in the API response.
@@ -2238,8 +2239,7 @@
         });
 
         // Phase 2: merge with accumulated items from previous attempts.
-        // New codes are added; existing codes keep the higher quantity (don't re-sum,
-        // since we're re-reading the same receipt image).
+        // New codes are added; existing codes keep the higher quantity.
         const merged = Object.assign({}, prevItemMap);
         Object.values(thisScanMap).forEach(item => {
           const code = String(item.item_code).trim();
@@ -2250,17 +2250,23 @@
           }
         });
 
-        const mergedList = Object.values(merged);
+        // Expand to one list entry per receipt-line occurrence (quantity: 1 each),
+        // so the matching dialog shows a separate card for every duplicate.
+        const uniqueCount = Object.keys(merged).length;
+        const mergedList = [];
+        Object.values(merged).forEach(item => {
+          const count = Number(item.quantity) || 1;
+          const unit  = Object.assign({}, item, { quantity: 1 });
+          for (let i = 0; i < count; i++) mergedList.push(unit);
+        });
+
         const itemsSold  = result.items_sold;
-        // Use the best total-quantity count across all attempts.
         const bestCount  = Math.max(thisLineCount, prevBestCount);
-        // Count matches if we've read at least as many items as sold (>= handles
-        // cases where extra noise lines inflate the count slightly above items_sold).
         const countsMatch = (itemsSold == null) || (bestCount >= itemsSold);
 
         if (!countsMatch && attempt < MAX_ATTEMPTS) {
           showMismatchDialog(
-            bestCount, itemsSold, attempt, mergedList.length,
+            bestCount, itemsSold, attempt, uniqueCount,
             () => _runReceiptScan(file, merged, attempt + 1, bestCount),  // Try Again
             () => showReceiptResults(mergedList)                            // Use This List
           );
@@ -2382,9 +2388,10 @@
 
       const title = document.createElement('p');
       title.className = 'receipt-dialog-title';
-      const totalQty = items.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0);
-      const uniqueLabel = totalQty !== items.length ? ' (' + items.length + ' unique)' : '';
-      title.textContent = 'Found ' + totalQty + ' item' + (totalQty !== 1 ? 's' : '') + uniqueLabel;
+      // items is already expanded — one entry per receipt line, each with quantity:1
+      const uniqueCodes = new Set(items.map(i => String(i.item_code))).size;
+      const uniqueLabel = uniqueCodes !== items.length ? ' (' + uniqueCodes + ' unique)' : '';
+      title.textContent = 'Found ' + items.length + ' item' + (items.length !== 1 ? 's' : '') + uniqueLabel;
       inner.appendChild(title);
 
       const added = [];
