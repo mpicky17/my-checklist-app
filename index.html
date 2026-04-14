@@ -884,7 +884,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v46';
+    const APP_VERSION = 'my-checklist-v47';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2209,8 +2209,13 @@
         const base64 = await fileToBase64(file);
         // On retry passes, tell Claude which codes it already found so it can focus
         // on the parts of the receipt it previously missed.
-        const knownCodes = Object.keys(prevItemMap);
-        const result = await callAnthropicVision(base64, file.type, knownCodes);
+        // Pass previously-found items (code + quantity) so Claude can both find new
+        // items AND correct quantities on items it may have under-counted.
+        const previousItems = Object.values(prevItemMap).map(i => ({
+          item_code: String(i.item_code).trim(),
+          quantity: i.quantity || 1
+        }));
+        const result = await callAnthropicVision(base64, file.type, previousItems);
         loadingEl.remove();
 
         // Filter discount lines (000037 prefix) — belt-and-suspenders in case prompt missed one
@@ -2269,11 +2274,14 @@
       }
     }
 
-    async function callAnthropicVision(base64, mimeType, previousCodes = []) {
-      const retryNote = previousCodes.length > 0
-        ? '\n\nIMPORTANT: A previous read of this receipt already found these item codes: ' +
-          previousCodes.join(', ') +
-          '. Please scan the receipt again carefully and find ANY items whose codes are NOT in that list. Focus especially on hard-to-read areas, the top and bottom of the receipt, and any items that may have been cut off or partially obscured.'
+    async function callAnthropicVision(base64, mimeType, previousItems = []) {
+      const retryNote = previousItems.length > 0
+        ? '\n\nIMPORTANT: A previous read of this receipt found these items (item_code → quantity already recorded): ' +
+          previousItems.map(i => i.item_code + ' \u2192 ' + i.quantity).join(', ') +
+          '.\nPlease do two things:\n' +
+          '1. Find any items whose codes are NOT in that list (items missed entirely in the previous read).\n' +
+          '2. Re-check every item already in the list — if the receipt shows a different quantity than what was previously recorded, return the correct quantity from the receipt.\n' +
+          'Focus especially on hard-to-read areas, the top and bottom of the receipt, and any items that may have been cut off or partially obscured.'
         : '';
       const promptText = 'Extract all line items from this Costco receipt. Return ONLY a JSON object, no other text. Use this exact format:\n{"items_sold":23,"items":[{"item_code":"1234567","description":"ITEM NAME","quantity":1,"price":9.99}]}\nRules:\n- "items_sold": the integer shown next to "Items Sold" near the bottom of the receipt; use null if not visible\n- Include every item with a 6-7 digit item code\n- Exclude any item whose item code starts with "000037" (those are coupon/discount lines, not products)' + retryNote;
 
