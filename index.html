@@ -717,6 +717,7 @@
     }
 
     /* ── Receipt Scanner ─────────────────────────────────────────────── */
+    #scan-bar { padding: 0 0 10px; }
     .receipt-scan-btn {
       background: none; border: 1px solid #d1d5db; border-radius: 6px;
       font-size: 0.75rem; padding: 4px 8px; cursor: pointer; color: #4b5563;
@@ -838,11 +839,15 @@
       <button id="api-settings-btn" class="api-settings-btn" title="API Settings">⚙</button>
     </div>
     <div id="sync-status" class="sync-status"></div>
+    <div id="scan-bar">
+      <button id="scan-receipt-btn" class="receipt-scan-btn">📷 Scan Receipt</button>
+      <input id="scan-file-input" type="file" accept="image/*" style="display:none">
+    </div>
 <div id="list"></div>
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v41';
+    const APP_VERSION = 'my-checklist-v42';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1417,26 +1422,8 @@
         render();
       });
 
-      // Hidden file input — no capture attribute so iOS shows picker with Take Photo + Choose from Library
-      const fileInput = document.createElement('input');
-      fileInput.type = 'file';
-      fileInput.accept = 'image/*';
-      fileInput.style.display = 'none';
-      fileInput.addEventListener('change', () => {
-        if (fileInput.files[0]) processReceiptImage(fileInput.files[0]);
-        fileInput.value = '';
-      });
-
-      const scanBtn = document.createElement('button');
-      scanBtn.className = 'receipt-scan-btn';
-      scanBtn.textContent = '📷 Scan';
-      scanBtn.title = 'Scan a receipt (take photo or choose existing)';
-      scanBtn.addEventListener('click', () => openReceiptScanner(fileInput));
-
       row.appendChild(spacer);
       row.appendChild(input);
-      row.appendChild(scanBtn);
-      row.appendChild(fileInput);
       return row;
     }
 
@@ -2113,9 +2100,15 @@
       }
       return receiptItemCache;
     }
-    function setCacheEntry(code, itemId) {
+    function getCachedEntry(code) {
+      const raw = getReceiptCache()[code];
+      if (!raw) return null;
+      if (typeof raw === 'string') return { id: raw, qty: null }; // backward compat
+      return raw; // { id, qty }
+    }
+    function setCacheEntry(code, itemId, qty) {
       const cache = getReceiptCache();
-      cache[code] = itemId;
+      cache[code] = { id: itemId, qty: qty != null ? qty : null };
       receiptItemCache = cache;
       localStorage.setItem('receipt-cache', JSON.stringify(cache));
     }
@@ -2211,7 +2204,6 @@
     }
 
     function showReceiptResults(items) {
-      const cache = getReceiptCache();
       const checklistItems = Object.entries(state.items)
         .filter(([, it]) => it && !it.deleted && it.type !== 'header')
         .sort(([, a], [, b]) => (a.text || '').localeCompare(b.text || ''));
@@ -2229,12 +2221,13 @@
       const added = [];
 
       items.forEach(item => {
+        const cachedEntry = getCachedEntry(item.item_code);
+        const cachedId    = cachedEntry ? cachedEntry.id : null;
+        const cachedItem  = cachedId ? state.items[cachedId] : null;
+        const isCached    = !!(cachedItem && !cachedItem.deleted);
+
         const card = document.createElement('div');
         card.className = 'receipt-item-card';
-
-        const cachedId = cache[item.item_code];
-        const cachedItem = cachedId ? state.items[cachedId] : null;
-        const isCached = !!(cachedItem && !cachedItem.deleted);
 
         const headerRow = document.createElement('div');
         headerRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
@@ -2264,6 +2257,7 @@
         const matchRow = document.createElement('div');
         matchRow.className = 'receipt-match-row';
 
+        // Checklist item dropdown
         const sel = document.createElement('select');
         sel.className = 'receipt-match-select';
         let opts = '<option value="">\u2014 skip \u2014</option>';
@@ -2273,12 +2267,47 @@
         });
         sel.innerHTML = opts;
 
+        // Qty input
         const qtyInput = document.createElement('input');
         qtyInput.type = 'number';
         qtyInput.inputMode = 'numeric';
         qtyInput.min = '1';
-        qtyInput.value = item.quantity || 1;
         qtyInput.className = 'receipt-qty-input';
+
+        // Fill level indicator oval — shown when linked item has fill type and no qty entered
+        const fillOval = document.createElement('div');
+        fillOval.className = 'qty-fill-oval';
+        fillOval.style.display = 'none';
+        const fillBar = document.createElement('div');
+        fillBar.className = 'qty-fill-bar';
+        fillOval.appendChild(fillBar);
+
+        function updateFillIndicator() {
+          const selId = sel.value;
+          const selIt = selId ? state.items[selId] : null;
+          if (selIt && selIt.qtyType === 'fill' && !qtyInput.value.trim()) {
+            fillOval.dataset.fill = selIt.qtyValue || 'Empty';
+            fillOval.style.display = '';
+          } else {
+            fillOval.style.display = 'none';
+          }
+        }
+
+        // Set initial qty value: cached qty > receipt qty; blank if linked item is fill type
+        const initSelItem = isCached ? cachedItem : null;
+        if (initSelItem && initSelItem.qtyType === 'fill') {
+          qtyInput.value = ''; // blank — fill oval will show instead
+        } else if (isCached && cachedEntry.qty != null) {
+          qtyInput.value = String(cachedEntry.qty); // last-used qty
+        } else {
+          qtyInput.value = String(item.quantity || 1); // receipt qty as fallback
+        }
+
+        sel.addEventListener('change', updateFillIndicator);
+        qtyInput.addEventListener('input', updateFillIndicator);
+
+        // Run once on init so auto-matched fill items show the oval immediately
+        updateFillIndicator();
 
         const addBtn = document.createElement('button');
         addBtn.className = 'receipt-add-btn';
@@ -2291,13 +2320,24 @@
         addBtn.addEventListener('click', () => {
           const selectedId = sel.value;
           if (!selectedId) { card.style.opacity = '0.4'; return; }
-          const qty = Math.max(1, Math.floor(Number(qtyInput.value) || 1));
           const it = state.items[selectedId];
           if (!it) return;
-          it.qtyType = 'number';
-          it.qtyValue = (it.qtyType === 'number' && typeof it.qtyValue === 'number' ? it.qtyValue : 0) + qty;
-          it.updatedAt = Date.now();
-          setCacheEntry(item.item_code, selectedId);
+
+          const qtyStr = qtyInput.value.trim();
+          if (qtyStr !== '') {
+            // User entered a number — update qty (accumulate if already number, replace if fill)
+            const qty = Math.max(1, Math.floor(Number(qtyStr) || 1));
+            const prevType = it.qtyType;
+            const prevQty  = (prevType === 'number' && typeof it.qtyValue === 'number') ? it.qtyValue : 0;
+            it.qtyType  = 'number';
+            it.qtyValue = prevQty + qty;
+            it.updatedAt = Date.now();
+            setCacheEntry(item.item_code, selectedId, qty);
+          } else {
+            // No qty (fill item, keeping fill level) — just cache the association
+            setCacheEntry(item.item_code, selectedId, null);
+          }
+
           added.push(selectedId);
           card.style.opacity = '0.4';
           addBtn.disabled = true;
@@ -2307,6 +2347,7 @@
         skipBtn.addEventListener('click', () => { card.style.opacity = '0.4'; });
 
         matchRow.appendChild(sel);
+        matchRow.appendChild(fillOval);
         matchRow.appendChild(qtyInput);
         matchRow.appendChild(addBtn);
         matchRow.appendChild(skipBtn);
@@ -2572,6 +2613,14 @@
     });
 
     document.getElementById('api-settings-btn').addEventListener('click', openApiKeySettings);
+
+    // ── Scan bar (above list) ─────────────────────────────────────────────────
+    const _scanFileInput = document.getElementById('scan-file-input');
+    _scanFileInput.addEventListener('change', () => {
+      if (_scanFileInput.files[0]) processReceiptImage(_scanFileInput.files[0]);
+      _scanFileInput.value = '';
+    });
+    document.getElementById('scan-receipt-btn').addEventListener('click', () => openReceiptScanner(_scanFileInput));
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
