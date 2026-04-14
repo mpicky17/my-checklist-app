@@ -884,7 +884,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v44';
+    const APP_VERSION = 'my-checklist-v45';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2192,11 +2192,11 @@
     }
 
     async function processReceiptImage(file) {
-      // Entry point — start fresh with no previous items, attempt 1
-      await _runReceiptScan(file, {}, 1);
+      // Entry point — start fresh with no previous items, attempt 1, prevBestCount 0
+      await _runReceiptScan(file, {}, 1, 0);
     }
 
-    async function _runReceiptScan(file, prevItemMap, attempt) {
+    async function _runReceiptScan(file, prevItemMap, attempt, prevBestCount) {
       const MAX_ATTEMPTS = 5;
 
       const loadingEl = document.createElement('div');
@@ -2213,10 +2213,28 @@
         // Filter discount lines (000037 prefix) — belt-and-suspenders in case prompt missed one
         const filtered = result.items.filter(i => !String(i.item_code).startsWith('000037'));
 
-        // Merge with items from previous attempts:
-        // new item codes are added; if a code already existed, keep the higher quantity
-        const merged = Object.assign({}, prevItemMap);
+        // thisLineCount = raw line count from this scan, including duplicate item codes.
+        // Costco's "Items Sold" counts each receipt line, so we compare against this, not
+        // the number of unique codes.
+        const thisLineCount = filtered.length;
+
+        // Phase 1: consolidate THIS scan — sum quantities when the same code appears
+        // multiple times on the receipt (e.g. item bought twice, listed as two lines).
+        const thisScanMap = {};
         filtered.forEach(item => {
+          const code = String(item.item_code);
+          if (!thisScanMap[code]) {
+            thisScanMap[code] = Object.assign({}, item);
+          } else {
+            thisScanMap[code].quantity = (thisScanMap[code].quantity || 1) + (item.quantity || 1);
+          }
+        });
+
+        // Phase 2: merge with accumulated items from previous attempts.
+        // New codes are added; existing codes keep the higher quantity (don't re-sum,
+        // since we're re-reading the same receipt image).
+        const merged = Object.assign({}, prevItemMap);
+        Object.values(thisScanMap).forEach(item => {
           const code = String(item.item_code);
           if (!merged[code]) {
             merged[code] = item;
@@ -2225,15 +2243,17 @@
           }
         });
 
-        const mergedList  = Object.values(merged);
-        const itemsSold   = result.items_sold;
-        const countsMatch = (itemsSold == null) || (mergedList.length === itemsSold);
+        const mergedList = Object.values(merged);
+        const itemsSold  = result.items_sold;
+        // Use the best raw line count seen across all attempts for the comparison.
+        const bestCount  = Math.max(thisLineCount, prevBestCount);
+        const countsMatch = (itemsSold == null) || (bestCount === itemsSold);
 
         if (!countsMatch && attempt < MAX_ATTEMPTS) {
           showMismatchDialog(
-            mergedList.length, itemsSold, attempt,
-            () => _runReceiptScan(file, merged, attempt + 1),  // Try Again
-            () => showReceiptResults(mergedList)                 // Use This List
+            bestCount, itemsSold, attempt,
+            () => _runReceiptScan(file, merged, attempt + 1, bestCount),  // Try Again
+            () => showReceiptResults(mergedList)                            // Use This List
           );
         } else {
           if (!mergedList.length) { alert('No items found. Try a clearer photo.'); return; }
