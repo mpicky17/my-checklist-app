@@ -864,7 +864,7 @@
 
     /* ── Paste receipt textarea ──────────────────────────────────────── */
     .paste-receipt-textarea {
-      width: 100%; min-height: 180px; font-size: 0.78rem; font-family: monospace;
+      width: 100%; min-height: 180px; font-size: 16px; /* ≥16px prevents iOS Safari auto-zoom */ font-family: monospace;
       border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px;
       resize: vertical; box-sizing: border-box; line-height: 1.4;
     }
@@ -895,7 +895,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v51';
+    const APP_VERSION = 'my-checklist-v52';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1660,6 +1660,17 @@
         menu.remove();
         commitAddHeader(itemId);
       });
+      let _addOptTx = 0, _addOptTy = 0;
+      addOpt.addEventListener('touchstart', e => {
+        _addOptTx = e.touches[0].clientX; _addOptTy = e.touches[0].clientY;
+      }, { passive: true });
+      addOpt.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _addOptTx;
+        const dy = e.changedTouches[0].clientY - _addOptTy;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          e.preventDefault(); menu.remove(); commitAddHeader(itemId);
+        }
+      });
       menu.appendChild(addOpt);
 
       headers.forEach(hid => {
@@ -1670,6 +1681,17 @@
           e.preventDefault();
           menu.remove();
           moveToCategory(itemId, hid);
+        });
+        let _optTx = 0, _optTy = 0;
+        opt.addEventListener('touchstart', e => {
+          _optTx = e.touches[0].clientX; _optTy = e.touches[0].clientY;
+        }, { passive: true });
+        opt.addEventListener('touchend', e => {
+          const dx = e.changedTouches[0].clientX - _optTx;
+          const dy = e.changedTouches[0].clientY - _optTy;
+          if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+            e.preventDefault(); menu.remove(); moveToCategory(itemId, hid);
+          }
         });
         menu.appendChild(opt);
       });
@@ -2638,6 +2660,7 @@
           card.style.opacity = '0.4';
           addBtn.disabled = true;
           addBtn.textContent = '\u2713';
+          qtyInput.disabled = true;
         });
 
         skipBtn.addEventListener('click', () => { card.style.opacity = '0.4'; });
