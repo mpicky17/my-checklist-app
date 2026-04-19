@@ -932,6 +932,66 @@
       .price-result-source { color: #8e8e93; }
       .price-check-msg     { color: #8e8e93; }
     }
+
+    /* ── Compare Retailers overlay ──────────────────────────────────────── */
+    .compare-btn {
+      background: #0d9488; color: #fff; border: none; border-radius: 8px;
+      padding: 10px; font-size: 0.875rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; touch-action: manipulation;
+      width: 100%;
+    }
+    .compare-btn:hover { background: #0f766e; }
+    .compare-top-row {
+      display: flex; gap: 6px; margin-bottom: 12px;
+    }
+    .compare-top-card {
+      flex: 1; border-radius: 8px; padding: 10px 8px; text-align: center;
+      border: 2px solid transparent; min-width: 0;
+    }
+    .compare-top-card.amazon    { background: #fff7ed; border-color: #f97316; }
+    .compare-top-card.costco    { background: #fef2f2; border-color: #ef4444; }
+    .compare-top-card.jewel     { background: #f0fdf4; border-color: #22c55e; }
+    .compare-top-label {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;
+    }
+    .compare-top-card.amazon  .compare-top-label { color: #ea580c; }
+    .compare-top-card.costco  .compare-top-label { color: #dc2626; }
+    .compare-top-card.jewel   .compare-top-label { color: #16a34a; }
+    .compare-top-price { font-size: 1rem; font-weight: 700; color: #111; }
+    .compare-top-unit  { font-size: 0.75rem; color: #6b7280; }
+    .compare-top-na    { font-size: 0.85rem; color: #9ca3af; font-style: italic; }
+    .compare-retailer-tag {
+      font-size: 0.65rem; font-weight: 700; color: #fff; padding: 1px 6px;
+      border-radius: 4px; text-transform: uppercase; flex-shrink: 0;
+    }
+    .compare-retailer-tag.amazon  { background: #f97316; }
+    .compare-retailer-tag.costco  { background: #ef4444; }
+    .compare-retailer-tag.jewel   { background: #22c55e; }
+    .compare-unit-price {
+      font-size: 0.75rem; color: #6b7280; font-weight: 600;
+    }
+    .compare-loading {
+      display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #6b7280;
+      padding: 4px 0;
+    }
+    .compare-spinner {
+      width: 14px; height: 14px; border: 2px solid #e5e7eb;
+      border-top-color: #4f46e5; border-radius: 50%;
+      animation: compare-spin 0.6s linear infinite;
+    }
+    @keyframes compare-spin { to { transform: rotate(360deg); } }
+    .compare-note {
+      font-size: 0.7rem; color: #9ca3af; text-align: center; margin-top: 8px; font-style: italic;
+    }
+    @media (prefers-color-scheme: dark) {
+      .compare-top-card.amazon  { background: #431407; border-color: #f97316; }
+      .compare-top-card.costco  { background: #450a0a; border-color: #ef4444; }
+      .compare-top-card.jewel   { background: #052e16; border-color: #22c55e; }
+      .compare-top-price { color: #f2f2f7; }
+      .compare-top-unit  { color: #8e8e93; }
+      .compare-unit-price { color: #8e8e93; }
+      .compare-note { color: #6b7280; }
+    }
   </style>
 </head>
 <body>
@@ -953,12 +1013,13 @@
       <button id="paste-receipt-btn" class="receipt-scan-btn">📋 Paste Receipt</button>
       <button id="usage-btn" class="receipt-scan-btn">📊 Item Usage</button>
       <button id="price-check-btn" class="receipt-scan-btn">💰 Price Check</button>
+      <button id="compare-retailers-btn" class="receipt-scan-btn">🏪 Compare Retailers</button>
     </div>
 <div id="list"></div>
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v65';
+    const APP_VERSION = 'my-checklist-v66';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2342,6 +2403,38 @@
       setTimeout(() => inp.focus(), 50);
     }
 
+    function getScraperApiKey() {
+      return localStorage.getItem('scraperapi-key') || '';
+    }
+    function saveScraperApiKey(key) {
+      localStorage.setItem('scraperapi-key', key.trim());
+    }
+
+    function openScraperApiKeySettings(onSaved) {
+      const overlay = document.createElement('div');
+      overlay.className = 'api-key-dialog-overlay';
+      const dialog = document.createElement('div');
+      dialog.className = 'api-key-dialog';
+      const currentKey = getScraperApiKey();
+      dialog.innerHTML =
+        '<h3>ScraperAPI Key</h3>' +
+        '<p style="font-size:0.78rem;color:#6b7280;margin:0">Get a free key at scraperapi.com. Stored locally on this device only.</p>' +
+        '<input class="api-key-input" type="password" placeholder="Paste your ScraperAPI key\u2026" value="' + currentKey.replace(/"/g, '&quot;') + '">' +
+        '<button class="api-key-save-btn">Save</button>' +
+        '<button class="api-key-cancel-btn">Cancel</button>';
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+      const inp = dialog.querySelector('.api-key-input');
+      dialog.querySelector('.api-key-save-btn').addEventListener('click', () => {
+        saveScraperApiKey(inp.value);
+        overlay.remove();
+        if (onSaved) onSaved();
+      });
+      dialog.querySelector('.api-key-cancel-btn').addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      setTimeout(() => inp.focus(), 50);
+    }
+
     function openReceiptScanner(fileInput) {
       if (!getApiKey()) {
         openApiKeySettings();
@@ -3079,6 +3172,7 @@
     document.getElementById('paste-receipt-btn').addEventListener('click', openPasteDialog);
     document.getElementById('usage-btn').addEventListener('click', showUsageOverlay);
     document.getElementById('price-check-btn').addEventListener('click', showPriceCheckOverlay);
+    document.getElementById('compare-retailers-btn').addEventListener('click', showCompareRetailersOverlay);
 
     // ── Item Usage Overlay ────────────────────────────────────────────────────
 
@@ -3386,6 +3480,225 @@
       inner.appendChild(title);
       inner.appendChild(sel);
       inner.appendChild(searchBtn);
+      inner.appendChild(resultsArea);
+      inner.appendChild(doneBtn);
+      overlay.appendChild(inner);
+      document.body.appendChild(overlay);
+    }
+
+    // ── Compare Retailers Overlay ────────────────────────────────────────────
+
+    function showCompareRetailersOverlay() {
+      if (!getScraperApiKey()) {
+        openScraperApiKeySettings(() => showCompareRetailersOverlay());
+        return;
+      }
+      const overlay = document.createElement('div');
+      overlay.className = 'usage-dialog';
+
+      const inner = document.createElement('div');
+      inner.className = 'usage-dialog-inner';
+
+      const title = document.createElement('h2');
+      title.className = 'usage-dialog-title';
+      title.textContent = 'Compare Retailers';
+
+      const sel = document.createElement('select');
+      sel.className = 'usage-item-select';
+      const allItems = Object.entries(state.items)
+        .filter(([, it]) => it && !it.deleted && it.type === 'item' && it.text && it.text.trim())
+        .sort((a, b) => a[1].text.localeCompare(b[1].text));
+      let opts = '<option value="">— Select an item —</option>';
+      allItems.forEach(([id, it]) => {
+        opts += '<option value="' + id + '">' + it.text.replace(/</g, '&lt;') + '</option>';
+      });
+      sel.innerHTML = opts;
+
+      const compareBtn = document.createElement('button');
+      compareBtn.className = 'compare-btn';
+      compareBtn.textContent = 'Compare Prices';
+      compareBtn.style.display = 'none';
+
+      const topRow = document.createElement('div');
+      topRow.className = 'compare-top-row';
+      topRow.style.display = 'none';
+
+      const resultsArea = document.createElement('div');
+      resultsArea.className = 'price-results-area';
+
+      sel.addEventListener('change', () => {
+        compareBtn.style.display = sel.value ? '' : 'none';
+        topRow.style.display = 'none';
+        topRow.innerHTML = '';
+        resultsArea.innerHTML = '';
+      });
+
+      compareBtn.addEventListener('click', async () => {
+        const id = sel.value;
+        if (!id || !state.items[id]) return;
+        const query = state.items[id].text.trim();
+
+        resultsArea.innerHTML =
+          '<div class="compare-loading"><div class="compare-spinner"></div>Searching Amazon\u2026</div>' +
+          '<div class="compare-loading"><div class="compare-spinner"></div>Searching Costco via Instacart\u2026</div>' +
+          '<div class="compare-loading"><div class="compare-spinner"></div>Searching Jewel-Osco via Instacart\u2026</div>';
+        topRow.style.display = 'none';
+        topRow.innerHTML = '';
+        compareBtn.disabled = true;
+
+        try {
+          const resp = await fetch('/api/retailer-prices?q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(getScraperApiKey()));
+          const data = await resp.json();
+
+          if (data.error) {
+            resultsArea.innerHTML = '<div class="price-check-msg">Error: ' + data.error + '</div>';
+            compareBtn.disabled = false;
+            return;
+          }
+
+          const retailers = data.retailers || [];
+          resultsArea.innerHTML = '';
+
+          // Build top row — best unit price per retailer
+          topRow.innerHTML = '';
+          topRow.style.display = 'flex';
+          const retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
+
+          retailers.forEach(r => {
+            const cssClass = retailerCss[r.retailer] || 'amazon';
+            const card = document.createElement('div');
+            card.className = 'compare-top-card ' + cssClass;
+
+            const label = document.createElement('div');
+            label.className = 'compare-top-label';
+            label.textContent = r.retailer;
+            card.appendChild(label);
+
+            if (r.error || !r.products || r.products.length === 0) {
+              const na = document.createElement('div');
+              na.className = 'compare-top-na';
+              na.textContent = r.error ? 'Unavailable' : 'No results';
+              card.appendChild(na);
+            } else {
+              // Find product with lowest unit price
+              const withUnit = r.products.filter(p => p.unitPrice);
+              const best = withUnit.length > 0
+                ? withUnit.reduce((a, b) => parseFloat(a.unitPrice) < parseFloat(b.unitPrice) ? a : b)
+                : r.products[0];
+
+              const priceDiv = document.createElement('div');
+              priceDiv.className = 'compare-top-price';
+              priceDiv.textContent = best.price;
+              card.appendChild(priceDiv);
+
+              if (best.unitPrice && best.unitLabel) {
+                const unitDiv = document.createElement('div');
+                unitDiv.className = 'compare-top-unit';
+                unitDiv.textContent = '$' + best.unitPrice + '/' + best.unitLabel;
+                card.appendChild(unitDiv);
+              }
+            }
+            topRow.appendChild(card);
+          });
+
+          // Merge all products, sort by unit price
+          const allProducts = [];
+          retailers.forEach(r => {
+            if (r.products) {
+              r.products.forEach(p => allProducts.push(p));
+            }
+          });
+
+          allProducts.sort((a, b) => {
+            const aUnit = a.unitPrice ? parseFloat(a.unitPrice) : Infinity;
+            const bUnit = b.unitPrice ? parseFloat(b.unitPrice) : Infinity;
+            if (aUnit !== bUnit) return aUnit - bUnit;
+            return a.priceNum - b.priceNum;
+          });
+
+          if (allProducts.length === 0) {
+            resultsArea.innerHTML = '<div class="price-check-msg">No results found from any retailer.</div>';
+          } else {
+            allProducts.forEach(p => {
+              const card = document.createElement('div');
+              card.className = 'price-result-card';
+
+              const info = document.createElement('div');
+              info.className = 'price-result-info';
+
+              const tagRow = document.createElement('div');
+              tagRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+
+              const tag = document.createElement('span');
+              tag.className = 'compare-retailer-tag ' + (retailerCss[p.retailer] || 'amazon');
+              tag.textContent = p.retailer;
+              tagRow.appendChild(tag);
+
+              if (p.unitPrice && p.unitLabel) {
+                const unit = document.createElement('span');
+                unit.className = 'compare-unit-price';
+                unit.textContent = '$' + p.unitPrice + '/' + p.unitLabel;
+                tagRow.appendChild(unit);
+              } else {
+                const unit = document.createElement('span');
+                unit.className = 'compare-unit-price';
+                unit.textContent = '(total)';
+                tagRow.appendChild(unit);
+              }
+              info.appendChild(tagRow);
+
+              const itemTitle = document.createElement('span');
+              itemTitle.className = 'price-result-title';
+              itemTitle.textContent = p.title || '';
+              itemTitle.title = p.title || '';
+              info.appendChild(itemTitle);
+
+              const right = document.createElement('div');
+              right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;';
+
+              const price = document.createElement('span');
+              price.className = 'price-result-price';
+              price.textContent = p.price || '';
+              right.appendChild(price);
+
+              if (p.link) {
+                const link = document.createElement('a');
+                link.className = 'price-result-link';
+                link.textContent = 'View \u2192';
+                link.href = p.link;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                right.appendChild(link);
+              }
+
+              card.appendChild(info);
+              card.appendChild(right);
+              resultsArea.appendChild(card);
+            });
+          }
+
+          // Add note about Instacart pricing
+          const note = document.createElement('div');
+          note.className = 'compare-note';
+          note.textContent = 'Costco & Jewel prices via Instacart \u2014 may differ from in-store.';
+          resultsArea.appendChild(note);
+
+        } catch (e) {
+          resultsArea.innerHTML = '<div class="price-check-msg">Error fetching prices. Please try again.</div>';
+        }
+
+        compareBtn.disabled = false;
+      });
+
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'receipt-done-btn';
+      doneBtn.textContent = 'Done';
+      doneBtn.addEventListener('click', () => overlay.remove());
+
+      inner.appendChild(title);
+      inner.appendChild(sel);
+      inner.appendChild(compareBtn);
+      inner.appendChild(topRow);
       inner.appendChild(resultsArea);
       inner.appendChild(doneBtn);
       overlay.appendChild(inner);
