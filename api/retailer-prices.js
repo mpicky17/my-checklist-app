@@ -5,58 +5,56 @@ export default async function handler(req, res) {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: 'Missing query' });
 
+  const retailer = (req.query.retailer || '').toLowerCase();
+  if (!retailer) return res.status(400).json({ error: 'Missing retailer param (amazon, costco, jewel)' });
+
   const apiKey = req.query.key || process.env.SCRAPERAPI_KEY;
   if (!apiKey) return res.status(500).json({ error: 'SCRAPERAPI_KEY not configured' });
 
   const encodedQuery = encodeURIComponent(q);
-  const targets = [
-    {
+
+  const targets = {
+    amazon: {
       retailer: 'Amazon',
       url: `https://www.amazon.com/s?k=${encodedQuery}`,
       parse: parseAmazon,
     },
-    {
+    costco: {
       retailer: 'Costco',
       url: `https://www.instacart.com/store/costco/search/${encodedQuery}`,
       parse: parseInstacart,
-      storeName: 'Costco',
     },
-    {
+    jewel: {
       retailer: 'Jewel-Osco',
       url: `https://www.instacart.com/store/jewel-osco/search/${encodedQuery}`,
       parse: parseInstacart,
-      storeName: 'Jewel-Osco',
     },
-  ];
+  };
 
-  const results = await Promise.allSettled(
-    targets.map(async (t) => {
-      try {
-        const scraperUrl =
-          `https://api.scraperapi.com?api_key=${encodeURIComponent(apiKey)}` +
-          `&url=${encodeURIComponent(t.url)}&render=true`;
-        const resp = await fetch(scraperUrl, { signal: AbortSignal.timeout(45000) });
-        if (!resp.ok) return { retailer: t.retailer, products: [], error: `HTTP ${resp.status}` };
-        const html = await resp.text();
-        const products = t.parse(html, t.retailer, t.storeName);
-        return { retailer: t.retailer, products };
-      } catch (err) {
-        return { retailer: t.retailer, products: [], error: err.message || 'fetch failed' };
-      }
-    })
-  );
+  const t = targets[retailer];
+  if (!t) return res.status(400).json({ error: 'Unknown retailer. Use: amazon, costco, jewel' });
 
-  const output = results.map((r) => (r.status === 'fulfilled' ? r.value : { retailer: 'Unknown', products: [], error: r.reason }));
-  res.status(200).json({ retailers: output });
+  try {
+    const scraperUrl =
+      `https://api.scraperapi.com?api_key=${encodeURIComponent(apiKey)}` +
+      `&url=${encodeURIComponent(t.url)}&render=true`;
+    const resp = await fetch(scraperUrl, { signal: AbortSignal.timeout(9000) });
+    if (!resp.ok) {
+      return res.status(200).json({ retailer: t.retailer, products: [], error: `ScraperAPI HTTP ${resp.status}` });
+    }
+    const html = await resp.text();
+    const products = t.parse(html, t.retailer);
+    return res.status(200).json({ retailer: t.retailer, products });
+  } catch (err) {
+    return res.status(200).json({ retailer: t.retailer, products: [], error: err.message || 'fetch failed' });
+  }
 }
 
 // ── Amazon Parser ────────────────────────────────────────────────────────────
 
 function parseAmazon(html, retailer) {
   const products = [];
-  // Split by search result cards
   const cards = html.split('data-component-type="s-search-result"');
-  // Skip first chunk (before first result)
   for (let i = 1; i < cards.length && products.length < 10; i++) {
     const card = cards[i];
     try {
@@ -64,12 +62,22 @@ function parseAmazon(html, retailer) {
       const brandMatch = card.match(/a-size-base-plus a-color-base">([^<]+)/);
       const brand = brandMatch ? brandMatch[1].trim() : '';
 
-      // Title from h2 aria-label or span text
+      // Title — try span inside h2, then h2 aria-label
+      let title = '';
       const titleMatch = card.match(/a-size-base-plus a-spacing-none a-color-base a-text-normal"><span>([^<]+)/);
-      const title = titleMatch ? titleMatch[1].trim() : '';
+      if (titleMatch) {
+        title = titleMatch[1].trim();
+      } else {
+        const ariaMatch = card.match(/aria-label="([^"]+)"[^>]*class="a-size-base-plus[^"]*a-text-normal/);
+        if (ariaMatch) title = ariaMatch[1].trim();
+      }
       if (!title) continue;
 
-      const fullTitle = brand ? `${brand} ${title}` : title;
+      // Also try image alt for fuller title with size info
+      const imgAltMatch = card.match(/alt="([^"]{10,})"[^>]*class="s-image"/);
+      const imgAlt = imgAltMatch ? imgAltMatch[1].trim() : '';
+      // Use whichever is longer (image alt often has more size detail)
+      const fullTitle = imgAlt.length > title.length ? imgAlt : (brand && !title.startsWith(brand) ? `${brand} ${title}` : title);
 
       // Link
       const linkMatch = card.match(/href="(\/[^"]*\/dp\/[^"]+)"/);
@@ -81,16 +89,20 @@ function parseAmazon(html, retailer) {
       const price = parsePrice(priceStr);
       if (!price) continue;
 
-      // Unit price — Amazon shows e.g. "($2.28/100 Sheets)"
+      // Unit price — Amazon shows e.g. "($2.28/100 Sheets)" or "($0.05/Count)"
       const unitMatch = card.match(/\(.*?<span class="a-offscreen">([^<]+)<\/span>[^)]*\/([\w\s]+)\)/s);
       let unitPrice = null;
       let unitLabel = '';
       if (unitMatch) {
         unitPrice = parsePrice(unitMatch[1]);
-        unitLabel = unitMatch[2].trim();
+        unitLabel = normalizeUnitLabel(unitMatch[2].trim());
+        // Normalize Amazon's unit price to match our standard labels
+        const normalized = normalizeAmazonUnit(unitPrice, unitLabel);
+        unitPrice = normalized.unitPrice;
+        unitLabel = normalized.unitLabel;
       }
 
-      // If no explicit unit price, try to calculate from title
+      // If no explicit unit price, calculate from title
       if (!unitPrice) {
         const calc = calcUnitPrice(fullTitle, price);
         if (calc) {
@@ -104,7 +116,7 @@ function parseAmazon(html, retailer) {
         title: fullTitle,
         price: priceStr,
         priceNum: price,
-        unitPrice: unitPrice ? unitPrice.toFixed(2) : null,
+        unitPrice: unitPrice ? unitPrice.toFixed(4) : null,
         unitLabel: unitLabel || null,
         link,
       });
@@ -120,21 +132,18 @@ function parseAmazon(html, retailer) {
 function parseInstacart(html, retailer) {
   const products = [];
 
-  // Find product cards by the product link pattern
   const cardParts = html.split(/href="(\/products\/[^"]+)"/);
-  // cardParts: [before, href1, after1, href2, after2, ...]
   for (let i = 1; i < cardParts.length && products.length < 10; i += 2) {
     const href = cardParts[i];
     const after = cardParts[i + 1] || '';
-    // Also look back at the chunk before this href for image alt
     const before = cardParts[i - 1] || '';
 
     try {
-      // Title from heading div or image alt
+      // Title from heading div
       const titleMatch = after.match(/role="heading"[^>]*>([^<]+)/);
       let title = titleMatch ? titleMatch[1].trim() : '';
 
-      // Fallback: image alt from before this link
+      // Fallback: image alt
       if (!title) {
         const altMatch = before.match(/alt="([^"]+)"\s*class="e-/);
         title = altMatch ? altMatch[1].trim() : '';
@@ -147,11 +156,10 @@ function parseInstacart(html, retailer) {
       const price = parsePrice(priceStr);
       if (!price) continue;
 
-      // Size info from the size div
+      // Size info
       const sizeMatch = after.match(/class="e-cauxk8">([^<]+)/);
       const sizeText = sizeMatch ? sizeMatch[1].trim() : '';
 
-      // Build link
       const link = 'https://www.instacart.com' + href.split('"')[0];
 
       // Calculate unit price from title + size
@@ -163,7 +171,7 @@ function parseInstacart(html, retailer) {
         title,
         price: priceStr,
         priceNum: price,
-        unitPrice: calc ? calc.unitPrice.toFixed(2) : null,
+        unitPrice: calc ? calc.unitPrice.toFixed(4) : null,
         unitLabel: calc ? calc.unitLabel : null,
         link,
       });
@@ -175,13 +183,15 @@ function parseInstacart(html, retailer) {
 }
 
 // ── Unit Price Calculation ───────────────────────────────────────────────────
+// All weights normalize to $/oz. All counts normalize to $/ct.
+// Paper products normalize to $/100 sheets when possible, else $/roll.
 
 function calcUnitPrice(title, totalPrice) {
   const t = title.toLowerCase();
 
-  // Paper products: sheets × count
+  // Paper products: sheets × count → per 100 sheets
   const sheetsMatch = t.match(/(\d+)\s*sheets/);
-  const countMatch = t.match(/(\d+)\s*[-\s]?\s*(count|ct|pk|pack|rolls)\b/);
+  const countMatch = t.match(/(\d+)\s*[-\s]?\s*(count|ct|pk|pack|rolls?)\b/);
 
   if (sheetsMatch && countMatch) {
     const sheets = parseInt(sheetsMatch[1]);
@@ -193,48 +203,81 @@ function calcUnitPrice(title, totalPrice) {
   }
 
   // Rolls only (no sheet count)
-  if (!sheetsMatch && countMatch && /roll/i.test(countMatch[2])) {
+  if (!sheetsMatch && countMatch && /rolls?/i.test(countMatch[2])) {
     const count = parseInt(countMatch[1]);
     if (count > 0) {
       return { unitPrice: totalPrice / count, unitLabel: 'roll' };
     }
   }
 
-  // Weight: oz, lb, fl oz, gal
-  const ozMatch = t.match(/([\d.]+)\s*(fl\s*oz|oz)\b/);
-  if (ozMatch) {
+  // ── Weight: normalize everything to $/oz ──
+
+  // fl oz first (before oz to avoid "fl oz" matching just "oz")
+  const flozMatch = t.match(/([\d.]+)\s*fl\.?\s*oz\b/);
+  if (flozMatch) {
+    const floz = parseFloat(flozMatch[1]);
+    if (floz > 0) return { unitPrice: totalPrice / floz, unitLabel: 'fl oz' };
+  }
+
+  // oz (not preceded by "fl")
+  const ozMatch = t.match(/([\d.]+)\s*oz\b/);
+  if (ozMatch && !t.match(new RegExp(ozMatch[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(ozMatch[1], '[\\d.]+\\s*fl\\.?\\s*')))) {
     const oz = parseFloat(ozMatch[1]);
     if (oz > 0) return { unitPrice: totalPrice / oz, unitLabel: 'oz' };
   }
 
-  const lbMatch = t.match(/([\d.]+)\s*(lbs?)\b/);
+  // lb → oz
+  const lbMatch = t.match(/([\d.]+)\s*lbs?\b/);
   if (lbMatch) {
     const oz = parseFloat(lbMatch[1]) * 16;
     if (oz > 0) return { unitPrice: totalPrice / oz, unitLabel: 'oz' };
   }
 
+  // kg → oz
+  const kgMatch = t.match(/([\d.]+)\s*kg\b/);
+  if (kgMatch) {
+    const oz = parseFloat(kgMatch[1]) * 35.274;
+    if (oz > 0) return { unitPrice: totalPrice / oz, unitLabel: 'oz' };
+  }
+
+  // g → oz (but not "gallon" — require word boundary)
+  const gMatch = t.match(/([\d.]+)\s*g\b(?!al)/);
+  if (gMatch) {
+    const oz = parseFloat(gMatch[1]) / 28.3495;
+    if (oz > 0) return { unitPrice: totalPrice / oz, unitLabel: 'oz' };
+  }
+
+  // gallon → fl oz
   const galMatch = t.match(/([\d.]+)\s*(gallons?|gal)\b/);
   if (galMatch) {
-    const oz = parseFloat(galMatch[1]) * 128;
-    if (oz > 0) return { unitPrice: totalPrice / oz, unitLabel: 'oz' };
+    const floz = parseFloat(galMatch[1]) * 128;
+    if (floz > 0) return { unitPrice: totalPrice / floz, unitLabel: 'fl oz' };
   }
 
+  // liter → fl oz
   const literMatch = t.match(/([\d.]+)\s*(liters?|l)\b/);
   if (literMatch) {
-    const oz = parseFloat(literMatch[1]) * 33.814;
-    if (oz > 0) return { unitPrice: totalPrice / oz, unitLabel: 'oz' };
+    const floz = parseFloat(literMatch[1]) * 33.814;
+    if (floz > 0) return { unitPrice: totalPrice / floz, unitLabel: 'fl oz' };
   }
 
-  // Count/pack (non-roll)
-  if (countMatch && !/roll/i.test(countMatch[2])) {
+  // ml → fl oz
+  const mlMatch = t.match(/([\d.]+)\s*ml\b/);
+  if (mlMatch) {
+    const floz = parseFloat(mlMatch[1]) / 29.5735;
+    if (floz > 0) return { unitPrice: totalPrice / floz, unitLabel: 'fl oz' };
+  }
+
+  // ── Count-based ──
+
+  if (countMatch && !/rolls?/i.test(countMatch[2])) {
     const count = parseInt(countMatch[1]);
     if (count > 0) {
       return { unitPrice: totalPrice / count, unitLabel: 'ct' };
     }
   }
 
-  // Pods, bags, etc.
-  const miscMatch = t.match(/(\d+)\s*[-\s]?\s*(pods?|bags?|capsules?|tablets?|bars?|cans?)\b/);
+  const miscMatch = t.match(/(\d+)\s*[-\s]?\s*(pods?|bags?|capsules?|tablets?|bars?|cans?|ea|each)\b/);
   if (miscMatch) {
     const count = parseInt(miscMatch[1]);
     if (count > 0) {
@@ -243,6 +286,28 @@ function calcUnitPrice(title, totalPrice) {
   }
 
   return null;
+}
+
+// ── Normalize Amazon's unit labels to match our standard ────────────────────
+
+function normalizeAmazonUnit(unitPrice, label) {
+  const l = label.toLowerCase().trim();
+
+  // Already standard
+  if (l === 'oz' || l === 'ounce') return { unitPrice, unitLabel: 'oz' };
+  if (l === 'fl oz' || l === 'fluid ounce') return { unitPrice, unitLabel: 'fl oz' };
+  if (l === 'count' || l === 'ct' || l === 'each') return { unitPrice, unitLabel: 'ct' };
+  if (l === '100 sheets') return { unitPrice, unitLabel: '100sh' };
+
+  // Pound → convert to $/oz
+  if (l === 'pound' || l === 'lb') return { unitPrice: unitPrice / 16, unitLabel: 'oz' };
+
+  // Keep as-is for anything else
+  return { unitPrice, unitLabel: l };
+}
+
+function normalizeUnitLabel(label) {
+  return label.replace(/\s+/g, ' ').trim();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

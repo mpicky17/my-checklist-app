@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v66';
+    const APP_VERSION = 'my-checklist-v67';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3499,9 +3499,9 @@
       const inner = document.createElement('div');
       inner.className = 'usage-dialog-inner';
 
-      const title = document.createElement('h2');
-      title.className = 'usage-dialog-title';
-      title.textContent = 'Compare Retailers';
+      const heading = document.createElement('h2');
+      heading.className = 'usage-dialog-title';
+      heading.textContent = 'Compare Retailers';
 
       const sel = document.createElement('select');
       sel.className = 'usage-item-select';
@@ -3533,161 +3533,187 @@
         resultsArea.innerHTML = '';
       });
 
+      const retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
+      const retailerKeys = [
+        { key: 'amazon', name: 'Amazon' },
+        { key: 'costco', name: 'Costco' },
+        { key: 'jewel', name: 'Jewel-Osco' },
+      ];
+
       compareBtn.addEventListener('click', async () => {
         const id = sel.value;
         if (!id || !state.items[id]) return;
         const query = state.items[id].text.trim();
-
-        resultsArea.innerHTML =
-          '<div class="compare-loading"><div class="compare-spinner"></div>Searching Amazon\u2026</div>' +
-          '<div class="compare-loading"><div class="compare-spinner"></div>Searching Costco via Instacart\u2026</div>' +
-          '<div class="compare-loading"><div class="compare-spinner"></div>Searching Jewel-Osco via Instacart\u2026</div>';
-        topRow.style.display = 'none';
-        topRow.innerHTML = '';
         compareBtn.disabled = true;
 
-        try {
-          const resp = await fetch('/api/retailer-prices?q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(getScraperApiKey()));
-          const data = await resp.json();
+        // Reset UI
+        topRow.style.display = 'flex';
+        topRow.innerHTML = '';
+        resultsArea.innerHTML = '';
 
-          if (data.error) {
-            resultsArea.innerHTML = '<div class="price-check-msg">Error: ' + data.error + '</div>';
-            compareBtn.disabled = false;
-            return;
-          }
+        // Create top cards and loading indicators for each retailer
+        const topCards = {};
+        const loadingDivs = {};
+        retailerKeys.forEach(r => {
+          // Top card — starts as loading
+          const card = document.createElement('div');
+          card.className = 'compare-top-card ' + retailerCss[r.name];
+          const label = document.createElement('div');
+          label.className = 'compare-top-label';
+          label.textContent = r.name;
+          card.appendChild(label);
+          const spinner = document.createElement('div');
+          spinner.className = 'compare-loading';
+          spinner.style.justifyContent = 'center';
+          spinner.innerHTML = '<div class="compare-spinner"></div>';
+          card.appendChild(spinner);
+          topRow.appendChild(card);
+          topCards[r.name] = card;
 
-          const retailers = data.retailers || [];
-          resultsArea.innerHTML = '';
+          // Loading indicator in results area
+          const loading = document.createElement('div');
+          loading.className = 'compare-loading';
+          loading.innerHTML = '<div class="compare-spinner"></div>Searching ' + r.name + '\u2026';
+          resultsArea.appendChild(loading);
+          loadingDivs[r.name] = loading;
+        });
 
-          // Build top row — best unit price per retailer
-          topRow.innerHTML = '';
-          topRow.style.display = 'flex';
-          const retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
+        // Track all results for re-sorting
+        const allResults = {};
+        let completed = 0;
 
-          retailers.forEach(r => {
-            const cssClass = retailerCss[r.retailer] || 'amazon';
-            const card = document.createElement('div');
-            card.className = 'compare-top-card ' + cssClass;
+        function formatUnitPrice(p) {
+          if (!p.unitPrice || !p.unitLabel) return '(total)';
+          const n = parseFloat(p.unitPrice);
+          return '$' + (n < 0.01 ? n.toFixed(4) : n < 1 ? n.toFixed(2) : n.toFixed(2)) + '/' + p.unitLabel;
+        }
 
-            const label = document.createElement('div');
-            label.className = 'compare-top-label';
-            label.textContent = r.retailer;
-            card.appendChild(label);
+        function renderResults() {
+          // Remove old result cards (keep loading spinners)
+          resultsArea.querySelectorAll('.price-result-card, .compare-note').forEach(el => el.remove());
 
-            if (r.error || !r.products || r.products.length === 0) {
-              const na = document.createElement('div');
-              na.className = 'compare-top-na';
-              na.textContent = r.error ? 'Unavailable' : 'No results';
-              card.appendChild(na);
-            } else {
-              // Find product with lowest unit price
-              const withUnit = r.products.filter(p => p.unitPrice);
-              const best = withUnit.length > 0
-                ? withUnit.reduce((a, b) => parseFloat(a.unitPrice) < parseFloat(b.unitPrice) ? a : b)
-                : r.products[0];
-
-              const priceDiv = document.createElement('div');
-              priceDiv.className = 'compare-top-price';
-              priceDiv.textContent = best.price;
-              card.appendChild(priceDiv);
-
-              if (best.unitPrice && best.unitLabel) {
-                const unitDiv = document.createElement('div');
-                unitDiv.className = 'compare-top-unit';
-                unitDiv.textContent = '$' + best.unitPrice + '/' + best.unitLabel;
-                card.appendChild(unitDiv);
-              }
-            }
-            topRow.appendChild(card);
+          const merged = [];
+          Object.values(allResults).forEach(products => {
+            products.forEach(p => merged.push(p));
           });
 
-          // Merge all products, sort by unit price
-          const allProducts = [];
-          retailers.forEach(r => {
-            if (r.products) {
-              r.products.forEach(p => allProducts.push(p));
-            }
-          });
-
-          allProducts.sort((a, b) => {
+          merged.sort((a, b) => {
             const aUnit = a.unitPrice ? parseFloat(a.unitPrice) : Infinity;
             const bUnit = b.unitPrice ? parseFloat(b.unitPrice) : Infinity;
             if (aUnit !== bUnit) return aUnit - bUnit;
             return a.priceNum - b.priceNum;
           });
 
-          if (allProducts.length === 0) {
-            resultsArea.innerHTML = '<div class="price-check-msg">No results found from any retailer.</div>';
-          } else {
-            allProducts.forEach(p => {
-              const card = document.createElement('div');
-              card.className = 'price-result-card';
+          merged.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'price-result-card';
 
-              const info = document.createElement('div');
-              info.className = 'price-result-info';
+            const info = document.createElement('div');
+            info.className = 'price-result-info';
 
-              const tagRow = document.createElement('div');
-              tagRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+            const tagRow = document.createElement('div');
+            tagRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
 
-              const tag = document.createElement('span');
-              tag.className = 'compare-retailer-tag ' + (retailerCss[p.retailer] || 'amazon');
-              tag.textContent = p.retailer;
-              tagRow.appendChild(tag);
+            const tag = document.createElement('span');
+            tag.className = 'compare-retailer-tag ' + (retailerCss[p.retailer] || 'amazon');
+            tag.textContent = p.retailer;
+            tagRow.appendChild(tag);
 
-              if (p.unitPrice && p.unitLabel) {
-                const unit = document.createElement('span');
-                unit.className = 'compare-unit-price';
-                unit.textContent = '$' + p.unitPrice + '/' + p.unitLabel;
-                tagRow.appendChild(unit);
-              } else {
-                const unit = document.createElement('span');
-                unit.className = 'compare-unit-price';
-                unit.textContent = '(total)';
-                tagRow.appendChild(unit);
-              }
-              info.appendChild(tagRow);
+            const unit = document.createElement('span');
+            unit.className = 'compare-unit-price';
+            unit.textContent = formatUnitPrice(p);
+            tagRow.appendChild(unit);
+            info.appendChild(tagRow);
 
-              const itemTitle = document.createElement('span');
-              itemTitle.className = 'price-result-title';
-              itemTitle.textContent = p.title || '';
-              itemTitle.title = p.title || '';
-              info.appendChild(itemTitle);
+            const itemTitle = document.createElement('span');
+            itemTitle.className = 'price-result-title';
+            itemTitle.textContent = p.title || '';
+            itemTitle.title = p.title || '';
+            info.appendChild(itemTitle);
 
-              const right = document.createElement('div');
-              right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;';
+            const right = document.createElement('div');
+            right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;';
 
-              const price = document.createElement('span');
-              price.className = 'price-result-price';
-              price.textContent = p.price || '';
-              right.appendChild(price);
+            const price = document.createElement('span');
+            price.className = 'price-result-price';
+            price.textContent = p.price || '';
+            right.appendChild(price);
 
-              if (p.link) {
-                const link = document.createElement('a');
-                link.className = 'price-result-link';
-                link.textContent = 'View \u2192';
-                link.href = p.link;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                right.appendChild(link);
-              }
+            if (p.link) {
+              const link = document.createElement('a');
+              link.className = 'price-result-link';
+              link.textContent = 'View \u2192';
+              link.href = p.link;
+              link.target = '_blank';
+              link.rel = 'noopener noreferrer';
+              right.appendChild(link);
+            }
 
-              card.appendChild(info);
-              card.appendChild(right);
-              resultsArea.appendChild(card);
-            });
+            card.appendChild(info);
+            card.appendChild(right);
+            resultsArea.appendChild(card);
+          });
+
+          if (completed === 3) {
+            const note = document.createElement('div');
+            note.className = 'compare-note';
+            note.textContent = 'Costco & Jewel prices via Instacart \u2014 may differ from in-store.';
+            resultsArea.appendChild(note);
           }
-
-          // Add note about Instacart pricing
-          const note = document.createElement('div');
-          note.className = 'compare-note';
-          note.textContent = 'Costco & Jewel prices via Instacart \u2014 may differ from in-store.';
-          resultsArea.appendChild(note);
-
-        } catch (e) {
-          resultsArea.innerHTML = '<div class="price-check-msg">Error fetching prices. Please try again.</div>';
         }
 
-        compareBtn.disabled = false;
+        function updateTopCard(name, data) {
+          const card = topCards[name];
+          // Remove spinner
+          const spinner = card.querySelector('.compare-loading');
+          if (spinner) spinner.remove();
+
+          if (data.error || !data.products || data.products.length === 0) {
+            const na = document.createElement('div');
+            na.className = 'compare-top-na';
+            na.textContent = data.error ? 'Unavailable' : 'No results';
+            card.appendChild(na);
+          } else {
+            const withUnit = data.products.filter(p => p.unitPrice);
+            const best = withUnit.length > 0
+              ? withUnit.reduce((a, b) => parseFloat(a.unitPrice) < parseFloat(b.unitPrice) ? a : b)
+              : data.products[0];
+
+            const priceDiv = document.createElement('div');
+            priceDiv.className = 'compare-top-price';
+            priceDiv.textContent = best.price;
+            card.appendChild(priceDiv);
+
+            if (best.unitPrice && best.unitLabel) {
+              const unitDiv = document.createElement('div');
+              unitDiv.className = 'compare-top-unit';
+              unitDiv.textContent = formatUnitPrice(best);
+              card.appendChild(unitDiv);
+            }
+          }
+        }
+
+        // Fire 3 independent requests — each in its own serverless function call
+        const baseUrl = '/api/retailer-prices?q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(getScraperApiKey());
+
+        retailerKeys.forEach(r => {
+          fetch(baseUrl + '&retailer=' + r.key)
+            .then(resp => resp.json())
+            .then(data => {
+              allResults[r.name] = data.products || [];
+              updateTopCard(r.name, data);
+              loadingDivs[r.name].remove();
+              renderResults();
+            })
+            .catch(() => {
+              updateTopCard(r.name, { error: 'Network error' });
+              loadingDivs[r.name].remove();
+            })
+            .finally(() => {
+              completed++;
+              if (completed === 3) compareBtn.disabled = false;
+            });
+        });
       });
 
       const doneBtn = document.createElement('button');
@@ -3695,7 +3721,7 @@
       doneBtn.textContent = 'Done';
       doneBtn.addEventListener('click', () => overlay.remove());
 
-      inner.appendChild(title);
+      inner.appendChild(heading);
       inner.appendChild(sel);
       inner.appendChild(compareBtn);
       inner.appendChild(topRow);
