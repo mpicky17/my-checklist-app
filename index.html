@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v68';
+    const APP_VERSION = 'my-checklist-v69';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3794,34 +3794,46 @@
         }
 
         // Call ScraperAPI directly from the browser (no Vercel function needed)
+        // Stagger Instacart requests to avoid IP collision / rate-limiting
         var apiKey = getScraperApiKey();
-        retailerTargets.forEach(function(r) {
-          var targetUrl = r.url(query);
-          var scraperUrl = 'https://api.scraperapi.com?api_key=' + encodeURIComponent(apiKey)
-            + '&url=' + encodeURIComponent(targetUrl)
-            + (r.render ? '&render=true' : '');
-          fetch(scraperUrl)
-            .then(function(resp) {
-              if (!resp.ok) throw new Error('HTTP ' + resp.status);
-              return resp.text();
-            })
-            .then(function(html) {
-              var products = r.parse(html);
-              allResults[r.name] = products;
-              updateTopCard(r.name, products, null);
-              loadingDivs[r.name].remove();
-              renderResults();
-            })
-            .catch(function(err) {
-              allResults[r.name] = [];
-              updateTopCard(r.name, null, err.message);
-              loadingDivs[r.name].remove();
-              renderResults();
-            })
-            .finally(function() {
-              completed++;
-              if (completed === 3) compareBtn.disabled = false;
-            });
+        retailerTargets.forEach(function(r, index) {
+          var delay = 0;
+          if (r.render) {
+            var prevRender = retailerTargets.slice(0, index).filter(function(x) { return x.render; });
+            delay = prevRender.length * 4000;
+          }
+          setTimeout(function() {
+            var targetUrl = r.url(query);
+            var scraperUrl = 'https://api.scraperapi.com?api_key=' + encodeURIComponent(apiKey)
+              + '&url=' + encodeURIComponent(targetUrl)
+              + (r.render ? '&render=true&wait_for_selector=' + encodeURIComponent('a[href^="/products/"]') : '');
+            fetch(scraperUrl)
+              .then(function(resp) {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return resp.text();
+              })
+              .then(function(html) {
+                console.log(r.name + ': HTML length=' + html.length
+                  + ', product links=' + (html.match(/href="\/products\//g) || []).length
+                  + ', has "Current price"=' + (html.indexOf('Current price:') !== -1)
+                  + ', has "captcha"=' + (html.toLowerCase().indexOf('captcha') !== -1));
+                var products = r.parse(html);
+                allResults[r.name] = products;
+                updateTopCard(r.name, products, null);
+                loadingDivs[r.name].remove();
+                renderResults();
+              })
+              .catch(function(err) {
+                allResults[r.name] = [];
+                updateTopCard(r.name, null, err.message);
+                loadingDivs[r.name].remove();
+                renderResults();
+              })
+              .finally(function() {
+                completed++;
+                if (completed === 3) compareBtn.disabled = false;
+              });
+          }, delay);
         });
       });
 
