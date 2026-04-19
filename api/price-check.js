@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     const results = (data.shopping_results || [])
-      .slice(0, 10)
+      .slice(0, 100)
       .map(r => ({
         title:  r.title        || '',
         price:  r.price        || '',
