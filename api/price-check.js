@@ -17,12 +17,7 @@ export default async function handler(req, res) {
     const response = await fetch(url);
     const data = await response.json();
 
-    const TARGET_STORES = ['costco', 'jewel', 'amazon'];
     const results = (data.shopping_results || [])
-      .filter(r => {
-        const src = (r.source || '').toLowerCase();
-        return TARGET_STORES.some(s => src.includes(s));
-      })
       .slice(0, 10)
       .map(r => ({
         title:  r.title        || '',
