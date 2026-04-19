@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v67';
+    const APP_VERSION = 'my-checklist-v68';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3486,6 +3486,134 @@
       document.body.appendChild(overlay);
     }
 
+    // ── Compare Retailers — Parsers & Unit Price ────────────────────────────
+
+    function _parsePrice(str) {
+      if (!str) return null;
+      var n = parseFloat(str.replace(/[^0-9.]/g, ''));
+      return isNaN(n) ? null : n;
+    }
+
+    function _calcUnitPrice(title, totalPrice) {
+      var t = title.toLowerCase();
+
+      // Paper: sheets × count → per 100 sheets
+      var sheetsMatch = t.match(/(\d+)\s*sheets/);
+      var countMatch = t.match(/(\d+)\s*[-\s]?\s*(count|ct|pk|pack|rolls?)\b/);
+      if (sheetsMatch && countMatch) {
+        var totalSheets = parseInt(sheetsMatch[1]) * parseInt(countMatch[1]);
+        if (totalSheets > 0) return { unitPrice: (totalPrice / totalSheets) * 100, unitLabel: '100sh' };
+      }
+      // Rolls only
+      if (!sheetsMatch && countMatch && /rolls?/i.test(countMatch[2])) {
+        var rc = parseInt(countMatch[1]);
+        if (rc > 0) return { unitPrice: totalPrice / rc, unitLabel: 'roll' };
+      }
+      // fl oz (before oz)
+      var flozM = t.match(/([\d.]+)\s*fl\.?\s*oz\b/);
+      if (flozM) { var v = parseFloat(flozM[1]); if (v > 0) return { unitPrice: totalPrice / v, unitLabel: 'fl oz' }; }
+      // oz
+      var ozM = t.match(/([\d.]+)\s*oz\b/);
+      if (ozM && !t.match(new RegExp(ozM[1] + '\\s*fl'))) { var v2 = parseFloat(ozM[1]); if (v2 > 0) return { unitPrice: totalPrice / v2, unitLabel: 'oz' }; }
+      // lb → oz
+      var lbM = t.match(/([\d.]+)\s*lbs?\b/);
+      if (lbM) { var v3 = parseFloat(lbM[1]) * 16; if (v3 > 0) return { unitPrice: totalPrice / v3, unitLabel: 'oz' }; }
+      // kg → oz
+      var kgM = t.match(/([\d.]+)\s*kg\b/);
+      if (kgM) { var v4 = parseFloat(kgM[1]) * 35.274; if (v4 > 0) return { unitPrice: totalPrice / v4, unitLabel: 'oz' }; }
+      // g → oz (not gal)
+      var gM = t.match(/([\d.]+)\s*g\b(?!al)/);
+      if (gM) { var v5 = parseFloat(gM[1]) / 28.3495; if (v5 > 0) return { unitPrice: totalPrice / v5, unitLabel: 'oz' }; }
+      // gallon → fl oz
+      var galM = t.match(/([\d.]+)\s*(gallons?|gal)\b/);
+      if (galM) { var v6 = parseFloat(galM[1]) * 128; if (v6 > 0) return { unitPrice: totalPrice / v6, unitLabel: 'fl oz' }; }
+      // liter → fl oz
+      var litM = t.match(/([\d.]+)\s*(liters?|l)\b/);
+      if (litM) { var v7 = parseFloat(litM[1]) * 33.814; if (v7 > 0) return { unitPrice: totalPrice / v7, unitLabel: 'fl oz' }; }
+      // ml → fl oz
+      var mlM = t.match(/([\d.]+)\s*ml\b/);
+      if (mlM) { var v8 = parseFloat(mlM[1]) / 29.5735; if (v8 > 0) return { unitPrice: totalPrice / v8, unitLabel: 'fl oz' }; }
+      // Count
+      if (countMatch && !/rolls?/i.test(countMatch[2])) {
+        var cc = parseInt(countMatch[1]);
+        if (cc > 0) return { unitPrice: totalPrice / cc, unitLabel: 'ct' };
+      }
+      var miscM = t.match(/(\d+)\s*[-\s]?\s*(pods?|bags?|capsules?|tablets?|bars?|cans?|ea|each)\b/);
+      if (miscM) { var mc = parseInt(miscM[1]); if (mc > 0) return { unitPrice: totalPrice / mc, unitLabel: 'ct' }; }
+      return null;
+    }
+
+    function _parseAmazon(html) {
+      var products = [];
+      var cards = html.split('data-component-type="s-search-result"');
+      for (var i = 1; i < cards.length && products.length < 10; i++) {
+        var card = cards[i];
+        try {
+          var brandM = card.match(/a-size-base-plus a-color-base">([^<]+)/);
+          var brand = brandM ? brandM[1].trim() : '';
+          var titleM = card.match(/a-size-base-plus a-spacing-none a-color-base a-text-normal"><span>([^<]+)/);
+          var title = titleM ? titleM[1].trim() : '';
+          if (!title) continue;
+          var imgAltM = card.match(/alt="([^"]{10,})"[^>]*class="s-image"/);
+          var imgAlt = imgAltM ? imgAltM[1].trim() : '';
+          var fullTitle = imgAlt.length > title.length ? imgAlt : (brand && !title.startsWith(brand) ? brand + ' ' + title : title);
+          var linkM = card.match(/href="(\/[^"]*\/dp\/[^"]+)"/);
+          var link = linkM ? 'https://www.amazon.com' + linkM[1].split('&amp;').join('&').split('?')[0] : '';
+          var priceM = card.match(/<span class="a-price"[^>]*data-a-size="xl"[^>]*>[\s\S]*?<span class="a-offscreen">([^<]+)/);
+          var priceStr = priceM ? priceM[1].trim() : '';
+          var price = _parsePrice(priceStr);
+          if (!price) continue;
+          // Amazon unit price e.g. "($2.28/100 Sheets)"
+          var unitM = card.match(/\([\s\S]*?<span class="a-offscreen">([^<]+)<\/span>[^)]*\/([\w\s]+)\)/);
+          var unitPrice = null, unitLabel = '';
+          if (unitM) {
+            unitPrice = _parsePrice(unitM[1]);
+            unitLabel = unitM[2].trim().toLowerCase();
+            if (unitLabel === 'pound' || unitLabel === 'lb') { unitPrice = unitPrice / 16; unitLabel = 'oz'; }
+            else if (unitLabel === 'ounce') unitLabel = 'oz';
+            else if (unitLabel === 'fluid ounce') unitLabel = 'fl oz';
+            else if (unitLabel === 'count' || unitLabel === 'each') unitLabel = 'ct';
+            else if (unitLabel === '100 sheets') unitLabel = '100sh';
+          }
+          if (!unitPrice) {
+            var calc = _calcUnitPrice(fullTitle, price);
+            if (calc) { unitPrice = calc.unitPrice; unitLabel = calc.unitLabel; }
+          }
+          products.push({ retailer: 'Amazon', title: fullTitle, price: priceStr, priceNum: price,
+            unitPrice: unitPrice ? unitPrice.toFixed(4) : null, unitLabel: unitLabel || null, link: link });
+        } catch (e) { /* skip */ }
+      }
+      return products;
+    }
+
+    function _parseInstacart(html, retailer) {
+      var products = [];
+      var cardParts = html.split(/href="(\/products\/[^"]+)"/);
+      for (var i = 1; i < cardParts.length && products.length < 10; i += 2) {
+        var href = cardParts[i];
+        var after = cardParts[i + 1] || '';
+        var before = cardParts[i - 1] || '';
+        try {
+          var titleM = after.match(/role="heading"[^>]*>([^<]+)/);
+          var title = titleM ? titleM[1].trim() : '';
+          if (!title) { var altM = before.match(/alt="([^"]+)"\s*class="e-/); title = altM ? altM[1].trim() : ''; }
+          if (!title) continue;
+          var priceM = after.match(/Current price:\s*\$([0-9]+\.[0-9]{2})/);
+          var priceStr = priceM ? '$' + priceM[1] : '';
+          var price = _parsePrice(priceStr);
+          if (!price) continue;
+          var sizeM = after.match(/class="e-cauxk8">([^<]+)/);
+          var sizeText = sizeM ? sizeM[1].trim() : '';
+          var link = 'https://www.instacart.com' + href.split('"')[0];
+          var combined = title + (sizeText ? ', ' + sizeText : '');
+          var calc = _calcUnitPrice(combined, price);
+          products.push({ retailer: retailer, title: title, price: priceStr, priceNum: price,
+            unitPrice: calc ? calc.unitPrice.toFixed(4) : null, unitLabel: calc ? calc.unitLabel : null, link: link });
+        } catch (e) { /* skip */ }
+      }
+      return products;
+    }
+
     // ── Compare Retailers Overlay ────────────────────────────────────────────
 
     function showCompareRetailersOverlay() {
@@ -3493,76 +3621,73 @@
         openScraperApiKeySettings(() => showCompareRetailersOverlay());
         return;
       }
-      const overlay = document.createElement('div');
+      var overlay = document.createElement('div');
       overlay.className = 'usage-dialog';
 
-      const inner = document.createElement('div');
+      var inner = document.createElement('div');
       inner.className = 'usage-dialog-inner';
 
-      const heading = document.createElement('h2');
+      var heading = document.createElement('h2');
       heading.className = 'usage-dialog-title';
       heading.textContent = 'Compare Retailers';
 
-      const sel = document.createElement('select');
+      var sel = document.createElement('select');
       sel.className = 'usage-item-select';
-      const allItems = Object.entries(state.items)
-        .filter(([, it]) => it && !it.deleted && it.type === 'item' && it.text && it.text.trim())
-        .sort((a, b) => a[1].text.localeCompare(b[1].text));
-      let opts = '<option value="">— Select an item —</option>';
-      allItems.forEach(([id, it]) => {
-        opts += '<option value="' + id + '">' + it.text.replace(/</g, '&lt;') + '</option>';
+      var allItems = Object.entries(state.items)
+        .filter(function(e) { var it = e[1]; return it && !it.deleted && it.type === 'item' && it.text && it.text.trim(); })
+        .sort(function(a, b) { return a[1].text.localeCompare(b[1].text); });
+      var opts = '<option value="">— Select an item —</option>';
+      allItems.forEach(function(e) {
+        opts += '<option value="' + e[0] + '">' + e[1].text.replace(/</g, '&lt;') + '</option>';
       });
       sel.innerHTML = opts;
 
-      const compareBtn = document.createElement('button');
+      var compareBtn = document.createElement('button');
       compareBtn.className = 'compare-btn';
       compareBtn.textContent = 'Compare Prices';
       compareBtn.style.display = 'none';
 
-      const topRow = document.createElement('div');
+      var topRow = document.createElement('div');
       topRow.className = 'compare-top-row';
       topRow.style.display = 'none';
 
-      const resultsArea = document.createElement('div');
+      var resultsArea = document.createElement('div');
       resultsArea.className = 'price-results-area';
 
-      sel.addEventListener('change', () => {
+      sel.addEventListener('change', function() {
         compareBtn.style.display = sel.value ? '' : 'none';
         topRow.style.display = 'none';
         topRow.innerHTML = '';
         resultsArea.innerHTML = '';
       });
 
-      const retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
-      const retailerKeys = [
-        { key: 'amazon', name: 'Amazon' },
-        { key: 'costco', name: 'Costco' },
-        { key: 'jewel', name: 'Jewel-Osco' },
+      var retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
+      var retailerTargets = [
+        { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, render: false },
+        { name: 'Costco', url: function(q) { return 'https://www.instacart.com/store/costco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Costco'); }, render: true },
+        { name: 'Jewel-Osco', url: function(q) { return 'https://www.instacart.com/store/jewel-osco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Jewel-Osco'); }, render: true },
       ];
 
-      compareBtn.addEventListener('click', async () => {
-        const id = sel.value;
+      compareBtn.addEventListener('click', function() {
+        var id = sel.value;
         if (!id || !state.items[id]) return;
-        const query = state.items[id].text.trim();
+        var query = state.items[id].text.trim();
         compareBtn.disabled = true;
 
-        // Reset UI
         topRow.style.display = 'flex';
         topRow.innerHTML = '';
         resultsArea.innerHTML = '';
 
-        // Create top cards and loading indicators for each retailer
-        const topCards = {};
-        const loadingDivs = {};
-        retailerKeys.forEach(r => {
-          // Top card — starts as loading
-          const card = document.createElement('div');
+        var topCards = {};
+        var loadingDivs = {};
+        retailerTargets.forEach(function(r) {
+          var card = document.createElement('div');
           card.className = 'compare-top-card ' + retailerCss[r.name];
-          const label = document.createElement('div');
+          var label = document.createElement('div');
           label.className = 'compare-top-label';
           label.textContent = r.name;
           card.appendChild(label);
-          const spinner = document.createElement('div');
+          var spinner = document.createElement('div');
           spinner.className = 'compare-loading';
           spinner.style.justifyContent = 'center';
           spinner.innerHTML = '<div class="compare-spinner"></div>';
@@ -3570,156 +3695,140 @@
           topRow.appendChild(card);
           topCards[r.name] = card;
 
-          // Loading indicator in results area
-          const loading = document.createElement('div');
+          var loading = document.createElement('div');
           loading.className = 'compare-loading';
-          loading.innerHTML = '<div class="compare-spinner"></div>Searching ' + r.name + '\u2026';
+          loading.innerHTML = '<div class="compare-spinner"></div>Searching ' + r.name + (r.render ? ' (may take 30\u201340s)\u2026' : '\u2026');
           resultsArea.appendChild(loading);
           loadingDivs[r.name] = loading;
         });
 
-        // Track all results for re-sorting
-        const allResults = {};
-        let completed = 0;
+        var allResults = {};
+        var completed = 0;
 
-        function formatUnitPrice(p) {
+        function fmtUnit(p) {
           if (!p.unitPrice || !p.unitLabel) return '(total)';
-          const n = parseFloat(p.unitPrice);
-          return '$' + (n < 0.01 ? n.toFixed(4) : n < 1 ? n.toFixed(2) : n.toFixed(2)) + '/' + p.unitLabel;
+          var n = parseFloat(p.unitPrice);
+          return '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2)) + '/' + p.unitLabel;
         }
 
         function renderResults() {
-          // Remove old result cards (keep loading spinners)
-          resultsArea.querySelectorAll('.price-result-card, .compare-note').forEach(el => el.remove());
-
-          const merged = [];
-          Object.values(allResults).forEach(products => {
-            products.forEach(p => merged.push(p));
+          resultsArea.querySelectorAll('.price-result-card, .compare-note').forEach(function(el) { el.remove(); });
+          var merged = [];
+          Object.values(allResults).forEach(function(arr) { arr.forEach(function(p) { merged.push(p); }); });
+          merged.sort(function(a, b) {
+            var au = a.unitPrice ? parseFloat(a.unitPrice) : Infinity;
+            var bu = b.unitPrice ? parseFloat(b.unitPrice) : Infinity;
+            return au !== bu ? au - bu : a.priceNum - b.priceNum;
           });
-
-          merged.sort((a, b) => {
-            const aUnit = a.unitPrice ? parseFloat(a.unitPrice) : Infinity;
-            const bUnit = b.unitPrice ? parseFloat(b.unitPrice) : Infinity;
-            if (aUnit !== bUnit) return aUnit - bUnit;
-            return a.priceNum - b.priceNum;
-          });
-
-          merged.forEach(p => {
-            const card = document.createElement('div');
+          merged.forEach(function(p) {
+            var card = document.createElement('div');
             card.className = 'price-result-card';
-
-            const info = document.createElement('div');
+            var info = document.createElement('div');
             info.className = 'price-result-info';
-
-            const tagRow = document.createElement('div');
+            var tagRow = document.createElement('div');
             tagRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
-
-            const tag = document.createElement('span');
+            var tag = document.createElement('span');
             tag.className = 'compare-retailer-tag ' + (retailerCss[p.retailer] || 'amazon');
             tag.textContent = p.retailer;
             tagRow.appendChild(tag);
-
-            const unit = document.createElement('span');
+            var unit = document.createElement('span');
             unit.className = 'compare-unit-price';
-            unit.textContent = formatUnitPrice(p);
+            unit.textContent = fmtUnit(p);
             tagRow.appendChild(unit);
             info.appendChild(tagRow);
-
-            const itemTitle = document.createElement('span');
+            var itemTitle = document.createElement('span');
             itemTitle.className = 'price-result-title';
             itemTitle.textContent = p.title || '';
             itemTitle.title = p.title || '';
             info.appendChild(itemTitle);
-
-            const right = document.createElement('div');
+            var right = document.createElement('div');
             right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;';
-
-            const price = document.createElement('span');
-            price.className = 'price-result-price';
-            price.textContent = p.price || '';
-            right.appendChild(price);
-
+            var pr = document.createElement('span');
+            pr.className = 'price-result-price';
+            pr.textContent = p.price || '';
+            right.appendChild(pr);
             if (p.link) {
-              const link = document.createElement('a');
-              link.className = 'price-result-link';
-              link.textContent = 'View \u2192';
-              link.href = p.link;
-              link.target = '_blank';
-              link.rel = 'noopener noreferrer';
-              right.appendChild(link);
+              var lnk = document.createElement('a');
+              lnk.className = 'price-result-link';
+              lnk.textContent = 'View \u2192';
+              lnk.href = p.link; lnk.target = '_blank'; lnk.rel = 'noopener noreferrer';
+              right.appendChild(lnk);
             }
-
             card.appendChild(info);
             card.appendChild(right);
             resultsArea.appendChild(card);
           });
-
           if (completed === 3) {
-            const note = document.createElement('div');
+            var note = document.createElement('div');
             note.className = 'compare-note';
             note.textContent = 'Costco & Jewel prices via Instacart \u2014 may differ from in-store.';
             resultsArea.appendChild(note);
           }
         }
 
-        function updateTopCard(name, data) {
-          const card = topCards[name];
-          // Remove spinner
-          const spinner = card.querySelector('.compare-loading');
+        function updateTopCard(name, products, error) {
+          var card = topCards[name];
+          var spinner = card.querySelector('.compare-loading');
           if (spinner) spinner.remove();
-
-          if (data.error || !data.products || data.products.length === 0) {
-            const na = document.createElement('div');
+          if (error || !products || products.length === 0) {
+            var na = document.createElement('div');
             na.className = 'compare-top-na';
-            na.textContent = data.error ? 'Unavailable' : 'No results';
+            na.textContent = error ? 'Unavailable' : 'No results';
             card.appendChild(na);
           } else {
-            const withUnit = data.products.filter(p => p.unitPrice);
-            const best = withUnit.length > 0
-              ? withUnit.reduce((a, b) => parseFloat(a.unitPrice) < parseFloat(b.unitPrice) ? a : b)
-              : data.products[0];
-
-            const priceDiv = document.createElement('div');
-            priceDiv.className = 'compare-top-price';
-            priceDiv.textContent = best.price;
-            card.appendChild(priceDiv);
-
+            var withUnit = products.filter(function(p) { return p.unitPrice; });
+            var best = withUnit.length > 0
+              ? withUnit.reduce(function(a, b) { return parseFloat(a.unitPrice) < parseFloat(b.unitPrice) ? a : b; })
+              : products[0];
+            var prDiv = document.createElement('div');
+            prDiv.className = 'compare-top-price';
+            prDiv.textContent = best.price;
+            card.appendChild(prDiv);
             if (best.unitPrice && best.unitLabel) {
-              const unitDiv = document.createElement('div');
-              unitDiv.className = 'compare-top-unit';
-              unitDiv.textContent = formatUnitPrice(best);
-              card.appendChild(unitDiv);
+              var uDiv = document.createElement('div');
+              uDiv.className = 'compare-top-unit';
+              uDiv.textContent = fmtUnit(best);
+              card.appendChild(uDiv);
             }
           }
         }
 
-        // Fire 3 independent requests — each in its own serverless function call
-        const baseUrl = '/api/retailer-prices?q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(getScraperApiKey());
-
-        retailerKeys.forEach(r => {
-          fetch(baseUrl + '&retailer=' + r.key)
-            .then(resp => resp.json())
-            .then(data => {
-              allResults[r.name] = data.products || [];
-              updateTopCard(r.name, data);
+        // Call ScraperAPI directly from the browser (no Vercel function needed)
+        var apiKey = getScraperApiKey();
+        retailerTargets.forEach(function(r) {
+          var targetUrl = r.url(query);
+          var scraperUrl = 'https://api.scraperapi.com?api_key=' + encodeURIComponent(apiKey)
+            + '&url=' + encodeURIComponent(targetUrl)
+            + (r.render ? '&render=true' : '');
+          fetch(scraperUrl)
+            .then(function(resp) {
+              if (!resp.ok) throw new Error('HTTP ' + resp.status);
+              return resp.text();
+            })
+            .then(function(html) {
+              var products = r.parse(html);
+              allResults[r.name] = products;
+              updateTopCard(r.name, products, null);
               loadingDivs[r.name].remove();
               renderResults();
             })
-            .catch(() => {
-              updateTopCard(r.name, { error: 'Network error' });
+            .catch(function(err) {
+              allResults[r.name] = [];
+              updateTopCard(r.name, null, err.message);
               loadingDivs[r.name].remove();
+              renderResults();
             })
-            .finally(() => {
+            .finally(function() {
               completed++;
               if (completed === 3) compareBtn.disabled = false;
             });
         });
       });
 
-      const doneBtn = document.createElement('button');
+      var doneBtn = document.createElement('button');
       doneBtn.className = 'receipt-done-btn';
       doneBtn.textContent = 'Done';
-      doneBtn.addEventListener('click', () => overlay.remove());
+      doneBtn.addEventListener('click', function() { overlay.remove(); });
 
       inner.appendChild(heading);
       inner.appendChild(sel);
