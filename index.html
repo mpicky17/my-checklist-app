@@ -905,6 +905,33 @@
       .usage-no-data           { color: #8e8e93; }
       .usage-stats             { color: #e5e7eb; }
     }
+
+    /* ── Price Check overlay ─────────────────────────────────────────────── */
+    .price-check-search-btn {
+      background: #4f46e5; color: #fff; border: none; border-radius: 8px;
+      padding: 10px; font-size: 0.875rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; touch-action: manipulation;
+      width: 100%;
+    }
+    .price-check-search-btn:hover { background: #4338ca; }
+    .price-results-area { display: flex; flex-direction: column; gap: 8px; }
+    .price-result-card {
+      border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px;
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .price-result-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .price-result-source { font-size: 0.7rem; color: #6b7280; font-weight: 600; text-transform: uppercase; }
+    .price-result-title  { font-size: 0.85rem; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .price-result-price  { font-size: 0.95rem; font-weight: 700; color: #16a34a; flex-shrink: 0; }
+    .price-result-link   { font-size: 0.75rem; color: #4f46e5; text-decoration: none; flex-shrink: 0; }
+    .price-result-link:hover { text-decoration: underline; }
+    .price-check-msg { font-size: 0.875rem; color: #6b7280; text-align: center; padding: 16px 0; }
+    @media (prefers-color-scheme: dark) {
+      .price-result-card   { border-color: #3a3a3c; }
+      .price-result-title  { color: #f2f2f7; }
+      .price-result-source { color: #8e8e93; }
+      .price-check-msg     { color: #8e8e93; }
+    }
   </style>
 </head>
 <body>
@@ -925,12 +952,13 @@
       <input id="scan-file-input" type="file" accept="image/*" style="display:none">
       <button id="paste-receipt-btn" class="receipt-scan-btn">📋 Paste Receipt</button>
       <button id="usage-btn" class="receipt-scan-btn">📊 Item Usage</button>
+      <button id="price-check-btn" class="receipt-scan-btn">💰 Price Check</button>
     </div>
 <div id="list"></div>
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v56';
+    const APP_VERSION = 'my-checklist-v57';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3018,6 +3046,7 @@
     document.getElementById('scan-receipt-btn').addEventListener('click', () => openReceiptScanner(_scanFileInput));
     document.getElementById('paste-receipt-btn').addEventListener('click', openPasteDialog);
     document.getElementById('usage-btn').addEventListener('click', showUsageOverlay);
+    document.getElementById('price-check-btn').addEventListener('click', showPriceCheckOverlay);
 
     // ── Item Usage Overlay ────────────────────────────────────────────────────
 
@@ -3208,6 +3237,122 @@
         s2.textContent = '~' + (Math.round(perWeek * 100) / 100) + ' used per week';
         statsArea.appendChild(s2);
       }
+    }
+
+    // ── Price Check Overlay ───────────────────────────────────────────────────
+
+    function showPriceCheckOverlay() {
+      const overlay = document.createElement('div');
+      overlay.className = 'usage-dialog';
+
+      const inner = document.createElement('div');
+      inner.className = 'usage-dialog-inner';
+
+      const title = document.createElement('h2');
+      title.className = 'usage-dialog-title';
+      title.textContent = 'Price Check';
+
+      const sel = document.createElement('select');
+      sel.className = 'usage-item-select';
+      const allItems = Object.entries(state.items)
+        .filter(([, it]) => it && !it.deleted && it.type === 'item' && it.text && it.text.trim())
+        .sort((a, b) => a[1].text.localeCompare(b[1].text));
+      let opts = '<option value="">— Select an item —</option>';
+      allItems.forEach(([id, it]) => {
+        opts += '<option value="' + id + '">' + it.text.replace(/</g, '&lt;') + '</option>';
+      });
+      sel.innerHTML = opts;
+
+      const searchBtn = document.createElement('button');
+      searchBtn.className = 'price-check-search-btn';
+      searchBtn.textContent = 'Search Prices';
+      searchBtn.style.display = 'none';
+
+      const resultsArea = document.createElement('div');
+      resultsArea.className = 'price-results-area';
+
+      sel.addEventListener('change', () => {
+        searchBtn.style.display = sel.value ? '' : 'none';
+        resultsArea.innerHTML = '';
+      });
+
+      searchBtn.addEventListener('click', async () => {
+        const id = sel.value;
+        if (!id || !state.items[id]) return;
+        const query = state.items[id].text.trim();
+
+        resultsArea.innerHTML = '<div class="price-check-msg">Searching\u2026</div>';
+        searchBtn.disabled = true;
+
+        try {
+          const resp = await fetch('/api/price-check?q=' + encodeURIComponent(query));
+          const data = await resp.json();
+
+          resultsArea.innerHTML = '';
+
+          if (!data.results || data.results.length === 0) {
+            resultsArea.innerHTML = '<div class="price-check-msg">No results found.</div>';
+          } else {
+            data.results.forEach(r => {
+              const card = document.createElement('div');
+              card.className = 'price-result-card';
+
+              const info = document.createElement('div');
+              info.className = 'price-result-info';
+
+              const source = document.createElement('span');
+              source.className = 'price-result-source';
+              source.textContent = r.source || 'Unknown';
+
+              const itemTitle = document.createElement('span');
+              itemTitle.className = 'price-result-title';
+              itemTitle.textContent = r.title || '';
+              itemTitle.title = r.title || '';
+
+              info.appendChild(source);
+              info.appendChild(itemTitle);
+
+              const right = document.createElement('div');
+              right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;';
+
+              const price = document.createElement('span');
+              price.className = 'price-result-price';
+              price.textContent = r.price || '';
+
+              const link = document.createElement('a');
+              link.className = 'price-result-link';
+              link.textContent = 'View \u2192';
+              link.href = r.link || '#';
+              link.target = '_blank';
+              link.rel = 'noopener noreferrer';
+
+              right.appendChild(price);
+              right.appendChild(link);
+
+              card.appendChild(info);
+              card.appendChild(right);
+              resultsArea.appendChild(card);
+            });
+          }
+        } catch (e) {
+          resultsArea.innerHTML = '<div class="price-check-msg">Error fetching prices. Please try again.</div>';
+        }
+
+        searchBtn.disabled = false;
+      });
+
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'receipt-done-btn';
+      doneBtn.textContent = 'Done';
+      doneBtn.addEventListener('click', () => overlay.remove());
+
+      inner.appendChild(title);
+      inner.appendChild(sel);
+      inner.appendChild(searchBtn);
+      inner.appendChild(resultsArea);
+      inner.appendChild(doneBtn);
+      overlay.appendChild(inner);
+      document.body.appendChild(overlay);
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
