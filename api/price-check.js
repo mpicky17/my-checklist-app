@@ -5,8 +5,13 @@ export default async function handler(req, res) {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: 'Missing query' });
 
+  const keyPresent = !!process.env.SERPAPI_KEY;
+  const keyLength  = (process.env.SERPAPI_KEY || '').length;
+  const envKeys    = Object.keys(process.env).filter(k => !k.startsWith('npm_')).join(', ');
+  console.log('SERPAPI_KEY present:', keyPresent, '| length:', keyLength, '| env keys:', envKeys);
+
   if (!process.env.SERPAPI_KEY) {
-    return res.status(500).json({ error: 'SERPAPI_KEY not configured' });
+    return res.status(500).json({ error: 'SERPAPI_KEY not configured', keyPresent, keyLength, envKeys });
   }
 
   const url = 'https://serpapi.com/search.json?engine=google_shopping'
