@@ -10,18 +10,26 @@ export default async function handler(req, res) {
 
   const url = 'https://serpapi.com/search.json?engine=google_shopping'
     + '&q=' + encodeURIComponent(q)
+    + '&num=20'
     + '&api_key=' + encodeURIComponent(apiKey);
 
   try {
     const response = await fetch(url);
     const data = await response.json();
 
-    const results = (data.shopping_results || []).slice(0, 10).map(r => ({
-      title:  r.title  || '',
-      price:  r.price  || '',
-      source: r.source || '',
-      link:   r.link   || '',
-    }));
+    const TARGET_STORES = ['costco', 'jewel', 'amazon'];
+    const results = (data.shopping_results || [])
+      .filter(r => {
+        const src = (r.source || '').toLowerCase();
+        return TARGET_STORES.some(s => src.includes(s));
+      })
+      .slice(0, 10)
+      .map(r => ({
+        title:  r.title        || '',
+        price:  r.price        || '',
+        source: r.source       || '',
+        link:   r.product_link || r.link || '',
+      }));
 
     res.status(200).json({ results });
   } catch (err) {
