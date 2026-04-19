@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v75';
+    const APP_VERSION = 'my-checklist-v76';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3808,13 +3808,15 @@
         function fetchRetailer(r, scraperUrl, staggerMs, isRetry) {
           var retryDelay = 5000 + staggerMs;
           var fetchUrl = isRetry ? scraperUrl + '&_nocache=' + Date.now() : scraperUrl;
+          var t0 = performance.now();
           fetch(fetchUrl)
             .then(function(resp) {
               if (!resp.ok) throw new Error('HTTP ' + resp.status);
               return resp.text();
             })
             .then(function(html) {
-              console.log(r.name + (isRetry ? ' (retry)' : '') + ': HTML length=' + html.length
+              var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+              console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: HTML length=' + html.length
                 + ', product links=' + (html.match(/href="\/products\//g) || []).length
                 + ', has "Current price"=' + (html.indexOf('Current price:') !== -1)
                 + ', has "captcha"=' + (html.toLowerCase().indexOf('captcha') !== -1));
@@ -3832,11 +3834,13 @@
               if (completed === 3) compareBtn.disabled = false;
             })
             .catch(function(err) {
+              var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
               if (r.render && !isRetry) {
-                console.log(r.name + ': ' + err.message + ', retrying in ' + (retryDelay / 1000) + 's…');
+                console.log(r.name + ' [' + elapsed + 's]: ' + err.message + ', retrying in ' + (retryDelay / 1000) + 's…');
                 setTimeout(function() { fetchRetailer(r, scraperUrl, staggerMs, true); }, retryDelay);
                 return;
               }
+              console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: ' + err.message);
               allResults[r.name] = [];
               updateTopCard(r.name, null, err.message);
               loadingDivs[r.name].remove();
