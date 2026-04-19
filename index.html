@@ -930,7 +930,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v53';
+    const APP_VERSION = 'my-checklist-v54';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1060,27 +1060,24 @@
       fbSyncQtyHistory(id, dateStr, val);
     }
 
-    // Record current qty for all items once per calendar day on app open.
-    // This ensures every day the app is opened has a baseline reading, even
-    // without any manual changes. Multiple opens on the same day are no-ops.
-    function snapshotQtyHistoryToday() {
+    // One-time seed: when this feature first runs, record today's qty for all
+    // existing items so the graph has a starting point. Never runs again.
+    function initQtyHistoryIfNeeded() {
+      if (localStorage.getItem('checklist-qty-initialized')) return;
       const today = new Date().toLocaleDateString('en-CA');
-      const lastSnap = localStorage.getItem('checklist-qty-snapshot-date');
-      if (lastSnap === today) return; // already snapshotted today
       Object.keys(state.items).forEach(id => {
         const item = state.items[id];
         if (!item || item.deleted || item.type !== 'item') return;
         const val = qtyToNumber(item);
         if (val === null) return;
         if (!qtyHistory[id]) qtyHistory[id] = {};
-        // Only write if no entry for today yet (don't overwrite a change made earlier today)
         if (!(today in qtyHistory[id])) {
           qtyHistory[id][today] = val;
           fbSyncQtyHistory(id, today, val);
         }
       });
       saveQtyHistory();
-      localStorage.setItem('checklist-qty-snapshot-date', today);
+      localStorage.setItem('checklist-qty-initialized', '1');
     }
 
     function genId() {
@@ -3235,7 +3232,7 @@
 
     loadState();
     loadQtyHistory();
-    snapshotQtyHistoryToday();
+    initQtyHistoryIfNeeded();
     list.appendChild(createAddRow());
     render();
     initTitleEdit(document.querySelector('h1'));
