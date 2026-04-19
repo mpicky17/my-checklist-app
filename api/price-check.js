@@ -10,7 +10,7 @@ export default async function handler(req, res) {
 
   const url = 'https://serpapi.com/search.json?engine=google_shopping'
     + '&q=' + encodeURIComponent(q)
-    + '&num=20'
+    + '&num=100'
     + '&api_key=' + encodeURIComponent(apiKey);
 
   try {
