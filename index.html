@@ -871,6 +871,40 @@
     @media (prefers-color-scheme: dark) {
       .paste-receipt-textarea { background: #2c2c2e; border-color: #3a3a3c; color: #f2f2f7; }
     }
+
+    /* ── Item Usage overlay ──────────────────────────────────────────────── */
+    .usage-dialog {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      z-index: 600; overflow-y: auto; padding: 16px;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .usage-dialog-inner {
+      background: #fff; border-radius: 12px; width: 100%; max-width: 480px;
+      padding: 16px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .usage-dialog-title { font-size: 1rem; font-weight: 700; margin: 0; }
+    .usage-item-select {
+      width: 100%; font-size: 1rem; border: 1px solid #d1d5db;
+      border-radius: 6px; padding: 6px 8px; font-family: inherit;
+      background: #fff; color: #111;
+    }
+    .usage-chart-area { width: 100%; }
+    .usage-chart-area svg { width: 100%; display: block; }
+    .usage-no-data {
+      font-size: 0.875rem; color: #6b7280; text-align: center; padding: 20px 0;
+    }
+    .usage-stats {
+      font-size: 0.875rem; color: #374151;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .usage-stats span { display: block; }
+    @media (prefers-color-scheme: dark) {
+      .usage-dialog-inner      { background: #1c1c1e; }
+      .usage-dialog-title      { color: #f2f2f7; }
+      .usage-item-select       { background: #2c2c2e; border-color: #3a3a3c; color: #f2f2f7; }
+      .usage-no-data           { color: #8e8e93; }
+      .usage-stats             { color: #e5e7eb; }
+    }
   </style>
 </head>
 <body>
@@ -890,12 +924,13 @@
       <button id="scan-receipt-btn" class="receipt-scan-btn">📷 Scan Receipt</button>
       <input id="scan-file-input" type="file" accept="image/*" style="display:none">
       <button id="paste-receipt-btn" class="receipt-scan-btn">📋 Paste Receipt</button>
+      <button id="usage-btn" class="receipt-scan-btn">📊 Item Usage</button>
     </div>
 <div id="list"></div>
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v52';
+    const APP_VERSION = 'my-checklist-v53';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -916,9 +951,10 @@
     let collapsedHeaders = { A: new Set(), B: new Set(), C: new Set() };
 
     // No-ops replaced by real implementations once Firebase is initialized
-    let fbSyncItem   = function() {};
-    let fbSyncLayout = function() {};
-    let fbSyncMeta   = function() {};
+    let fbSyncItem       = function() {};
+    let fbSyncLayout     = function() {};
+    let fbSyncMeta       = function() {};
+    let fbSyncQtyHistory = function() {};
 
     const list = document.getElementById('list');
     let dragId = null;
@@ -988,6 +1024,63 @@
           });
         }
       }
+    }
+
+    // ── Qty History ───────────────────────────────────────────────────────────
+
+    const FILL_TO_NUM = { Full: 1, Half: 0.5, Low: 0.25, Empty: 0 };
+
+    let qtyHistory = {}; // { [itemId]: { [dateStr "YYYY-MM-DD"]: number } }
+
+    function loadQtyHistory() {
+      const raw = localStorage.getItem('checklist-qty-history');
+      if (raw) try { qtyHistory = JSON.parse(raw); } catch(e) {}
+    }
+
+    function saveQtyHistory() {
+      localStorage.setItem('checklist-qty-history', JSON.stringify(qtyHistory));
+    }
+
+    function qtyToNumber(item) {
+      if (!item || item.qtyType === null) return null;
+      if (item.qtyType === 'number') return (typeof item.qtyValue === 'number') ? item.qtyValue : null;
+      if (item.qtyType === 'fill')   return FILL_TO_NUM.hasOwnProperty(item.qtyValue) ? FILL_TO_NUM[item.qtyValue] : null;
+      return null;
+    }
+
+    function recordQtyHistory(id) {
+      const item = state.items[id];
+      if (!item) return;
+      const val = qtyToNumber(item);
+      if (val === null) return;
+      const dateStr = new Date().toLocaleDateString('en-CA'); // "YYYY-MM-DD"
+      if (!qtyHistory[id]) qtyHistory[id] = {};
+      qtyHistory[id][dateStr] = val;
+      saveQtyHistory();
+      fbSyncQtyHistory(id, dateStr, val);
+    }
+
+    // Record current qty for all items once per calendar day on app open.
+    // This ensures every day the app is opened has a baseline reading, even
+    // without any manual changes. Multiple opens on the same day are no-ops.
+    function snapshotQtyHistoryToday() {
+      const today = new Date().toLocaleDateString('en-CA');
+      const lastSnap = localStorage.getItem('checklist-qty-snapshot-date');
+      if (lastSnap === today) return; // already snapshotted today
+      Object.keys(state.items).forEach(id => {
+        const item = state.items[id];
+        if (!item || item.deleted || item.type !== 'item') return;
+        const val = qtyToNumber(item);
+        if (val === null) return;
+        if (!qtyHistory[id]) qtyHistory[id] = {};
+        // Only write if no entry for today yet (don't overwrite a change made earlier today)
+        if (!(today in qtyHistory[id])) {
+          qtyHistory[id][today] = val;
+          fbSyncQtyHistory(id, today, val);
+        }
+      });
+      saveQtyHistory();
+      localStorage.setItem('checklist-qty-snapshot-date', today);
     }
 
     function genId() {
@@ -1886,6 +1979,7 @@
       item.qtyType  = type;
       item.qtyValue = value;
       item.updatedAt = Date.now();
+      recordQtyHistory(id);
       save();
       fbSyncItem(id);
       refreshQtyCell(cell, type, value);
@@ -2063,6 +2157,7 @@
           if (idx < levels.length - 1) it.qtyValue = levels[idx + 1];
         }
         it.updatedAt = Date.now();
+        recordQtyHistory(id);
         save();
         fbSyncItem(id);
         refreshQtyCell(cell, it.qtyType, it.qtyValue);
@@ -2097,6 +2192,7 @@
           if (idx > 0) it.qtyValue = levels[idx - 1];
         }
         it.updatedAt = Date.now();
+        recordQtyHistory(id);
         save();
         fbSyncItem(id);
         refreshQtyCell(cell, it.qtyType, it.qtyValue);
@@ -2656,6 +2752,7 @@
             setCacheEntry(item.item_code, selectedId, null);
           }
 
+          recordQtyHistory(selectedId);
           added.push(selectedId);
           card.style.opacity = '0.4';
           addBtn.disabled = true;
@@ -2941,10 +3038,204 @@
     });
     document.getElementById('scan-receipt-btn').addEventListener('click', () => openReceiptScanner(_scanFileInput));
     document.getElementById('paste-receipt-btn').addEventListener('click', openPasteDialog);
+    document.getElementById('usage-btn').addEventListener('click', showUsageOverlay);
+
+    // ── Item Usage Overlay ────────────────────────────────────────────────────
+
+    function showUsageOverlay() {
+      const overlay = document.createElement('div');
+      overlay.className = 'usage-dialog';
+
+      const inner = document.createElement('div');
+      inner.className = 'usage-dialog-inner';
+
+      const title = document.createElement('h2');
+      title.className = 'usage-dialog-title';
+      title.textContent = 'Item Usage';
+
+      // Dropdown: all non-deleted items with a qty type, sorted by text
+      const sel = document.createElement('select');
+      sel.className = 'usage-item-select';
+
+      const allItems = Object.entries(state.items)
+        .filter(([, it]) => it && !it.deleted && it.type === 'item')
+        .sort((a, b) => (a[1].text || '').localeCompare(b[1].text || ''));
+
+      let placeholderOpt = '<option value="">— Select an item —</option>';
+      allItems.forEach(([id, it]) => {
+        placeholderOpt += '<option value="' + id + '">' + (it.text || '(blank)').replace(/</g, '&lt;') + '</option>';
+      });
+      sel.innerHTML = placeholderOpt;
+
+      const chartArea = document.createElement('div');
+      chartArea.className = 'usage-chart-area';
+
+      const statsArea = document.createElement('div');
+      statsArea.className = 'usage-stats';
+
+      sel.addEventListener('change', () => {
+        renderUsageChart(sel.value, chartArea, statsArea);
+      });
+
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'receipt-done-btn';
+      doneBtn.textContent = 'Done';
+      doneBtn.addEventListener('click', () => overlay.remove());
+
+      inner.appendChild(title);
+      inner.appendChild(sel);
+      inner.appendChild(chartArea);
+      inner.appendChild(statsArea);
+      inner.appendChild(doneBtn);
+      overlay.appendChild(inner);
+      document.body.appendChild(overlay);
+    }
+
+    function renderUsageChart(id, chartArea, statsArea) {
+      chartArea.innerHTML = '';
+      statsArea.innerHTML = '';
+      if (!id) return;
+
+      const rawEntries = Object.entries(qtyHistory[id] || {});
+      rawEntries.sort((a, b) => a[0].localeCompare(b[0]));
+
+      if (rawEntries.length < 2) {
+        const msg = document.createElement('div');
+        msg.className = 'usage-no-data';
+        msg.textContent = 'Not enough data to graph yet.';
+        chartArea.appendChild(msg);
+        return;
+      }
+
+      const dates  = rawEntries.map(e => e[0]);
+      const values = rawEntries.map(e => e[1]);
+
+      // Detect fill type (all values in 0/0.25/0.5/1) vs number type
+      const fillVals = new Set([0, 0.25, 0.5, 1]);
+      const isFill = values.every(v => fillVals.has(v));
+
+      const maxVal = isFill ? 1 : Math.max(...values, 1);
+
+      // Convert date strings to timestamps for linear X positioning
+      const timestamps = dates.map(d => new Date(d + 'T00:00:00').getTime());
+      const tMin = timestamps[0];
+      const tMax = timestamps[timestamps.length - 1];
+      const tRange = tMax - tMin || 1;
+
+      // SVG dimensions
+      const W = 300, H = 150;
+      const PAD_L = isFill ? 38 : 30, PAD_R = 10, PAD_T = 12, PAD_B = 28;
+      const gW = W - PAD_L - PAD_R;
+      const gH = H - PAD_T - PAD_B;
+
+      function xOf(ts)  { return PAD_L + ((ts - tMin) / tRange) * gW; }
+      function yOf(val) { return PAD_T + (1 - val / maxVal) * gH; }
+
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      svg.setAttribute('aria-label', 'Quantity history chart');
+
+      // Determine dark mode
+      const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const axisColor  = dark ? '#636366' : '#d1d5db';
+      const textColor  = dark ? '#8e8e93' : '#6b7280';
+      const lineColor  = '#4f46e5';
+      const dotColor   = '#4f46e5';
+      const dashColor  = dark ? '#3a3a3c' : '#e5e7eb';
+
+      function makeLine(x1, y1, x2, y2, stroke, sw, dash) {
+        const l = document.createElementNS(svgNS, 'line');
+        l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+        l.setAttribute('stroke', stroke);
+        l.setAttribute('stroke-width', sw);
+        if (dash) l.setAttribute('stroke-dasharray', dash);
+        return l;
+      }
+      function makeText(x, y, txt, anchor, size, color) {
+        const t = document.createElementNS(svgNS, 'text');
+        t.setAttribute('x', x); t.setAttribute('y', y);
+        t.setAttribute('text-anchor', anchor);
+        t.setAttribute('font-size', size);
+        t.setAttribute('fill', color);
+        t.setAttribute('font-family', 'sans-serif');
+        t.textContent = txt;
+        return t;
+      }
+
+      // Axes
+      svg.appendChild(makeLine(PAD_L, PAD_T, PAD_L, PAD_T + gH, axisColor, 1, null));
+      svg.appendChild(makeLine(PAD_L, PAD_T + gH, PAD_L + gW, PAD_T + gH, axisColor, 1, null));
+
+      // Y axis labels
+      if (isFill) {
+        [{ v: 1, label: 'Full' }, { v: 0.5, label: 'Half' }, { v: 0.25, label: 'Low' }, { v: 0, label: 'Empty' }].forEach(({ v, label }) => {
+          const y = yOf(v);
+          svg.appendChild(makeLine(PAD_L, y, PAD_L + gW, y, dashColor, 0.5, '3 3'));
+          svg.appendChild(makeText(PAD_L - 3, y + 4, label, 'end', 8, textColor));
+        });
+      } else {
+        // 0 and max ticks
+        svg.appendChild(makeText(PAD_L - 3, yOf(0) + 4, '0', 'end', 8, textColor));
+        svg.appendChild(makeText(PAD_L - 3, yOf(maxVal) + 4, String(maxVal), 'end', 8, textColor));
+        svg.appendChild(makeLine(PAD_L, yOf(0), PAD_L + gW, yOf(0), dashColor, 0.5, '3 3'));
+      }
+
+      // X axis date labels (first and last)
+      const fmtDate = d => { const p = d.split('-'); return p[1] + '/' + p[2] + '/' + p[0].slice(2); };
+      svg.appendChild(makeText(PAD_L, PAD_T + gH + 16, fmtDate(dates[0]), 'start', 8, textColor));
+      svg.appendChild(makeText(PAD_L + gW, PAD_T + gH + 16, fmtDate(dates[dates.length - 1]), 'end', 8, textColor));
+
+      // Line connecting data points
+      const pts = timestamps.map((ts, i) => xOf(ts) + ',' + yOf(values[i])).join(' ');
+      const polyline = document.createElementNS(svgNS, 'polyline');
+      polyline.setAttribute('points', pts);
+      polyline.setAttribute('fill', 'none');
+      polyline.setAttribute('stroke', lineColor);
+      polyline.setAttribute('stroke-width', '2');
+      polyline.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(polyline);
+
+      // Dots at each data point
+      timestamps.forEach((ts, i) => {
+        const circle = document.createElementNS(svgNS, 'circle');
+        circle.setAttribute('cx', xOf(ts));
+        circle.setAttribute('cy', yOf(values[i]));
+        circle.setAttribute('r', '3');
+        circle.setAttribute('fill', dotColor);
+        svg.appendChild(circle);
+      });
+
+      chartArea.appendChild(svg);
+
+      // ── Usage rate stats ──────────────────────────────────────────────────
+      const msPerDay = 86400000;
+      const totalDays = (tMax - tMin) / msPerDay;
+      let totalUsed = 0;
+      for (let i = 1; i < values.length; i++) {
+        if (values[i] < values[i - 1]) totalUsed += values[i - 1] - values[i];
+      }
+
+      if (totalDays >= 7) {
+        const perDay = totalUsed / totalDays;
+        const s1 = document.createElement('span');
+        s1.textContent = '~' + (Math.round(perDay * 100) / 100) + ' used per day';
+        statsArea.appendChild(s1);
+      }
+      if (totalDays >= 14) {
+        const perWeek = (totalUsed / totalDays) * 7;
+        const s2 = document.createElement('span');
+        s2.textContent = '~' + (Math.round(perWeek * 100) / 100) + ' used per week';
+        statsArea.appendChild(s2);
+      }
+    }
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
     loadState();
+    loadQtyHistory();
+    snapshotQtyHistoryToday();
     list.appendChild(createAddRow());
     render();
     initTitleEdit(document.querySelector('h1'));
@@ -3099,6 +3390,21 @@
         changed = true;
       }
 
+      // Qty history: additive merge — keep any date entry not already recorded locally
+      if (remote.qtyHistory) {
+        let histChanged = false;
+        Object.entries(remote.qtyHistory).forEach(([itemId, dates]) => {
+          if (!qtyHistory[itemId]) qtyHistory[itemId] = {};
+          Object.entries(dates || {}).forEach(([dateStr, val]) => {
+            if (!(dateStr in qtyHistory[itemId])) {
+              qtyHistory[itemId][dateStr] = val;
+              histChanged = true;
+            }
+          });
+        });
+        if (histChanged) saveQtyHistory();
+      }
+
       if (changed) {
         localStorage.setItem('checklist-v2', JSON.stringify(state));
         render();
@@ -3140,6 +3446,11 @@
         fbDb.ref('users/' + fbUid + '/checklist/layoutNames').set(state.layoutNames)
           .then(() => setSyncStatus('Synced', 'ok'))
           .catch(() => setSyncStatus('Sync failed \u2014 saved locally', 'error'));
+      };
+
+      fbSyncQtyHistory = function(id, dateStr, val) {
+        if (!fbUid) return;
+        fbDb.ref('users/' + fbUid + '/checklist/qtyHistory/' + id + '/' + dateStr).set(val);
       };
 
       function startListener() {
@@ -3188,6 +3499,13 @@
                   C: [...(state.layouts.C || [])]
                 };
                 localStorage.setItem('checklist-v2', JSON.stringify(state));
+                // Restore qty history from cloud
+                if (remote.qtyHistory) {
+                  Object.entries(remote.qtyHistory).forEach(([itemId, dates]) => {
+                    qtyHistory[itemId] = Object.assign(qtyHistory[itemId] || {}, dates || {});
+                  });
+                  saveQtyHistory();
+                }
                 render();
                 setSyncStatus('Restored from cloud', 'ok');
               } else {
