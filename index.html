@@ -930,7 +930,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v54';
+    const APP_VERSION = 'my-checklist-v55';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1062,24 +1062,6 @@
 
     // One-time seed: when this feature first runs, record today's qty for all
     // existing items so the graph has a starting point. Never runs again.
-    function initQtyHistoryIfNeeded() {
-      if (localStorage.getItem('checklist-qty-initialized')) return;
-      const today = new Date().toLocaleDateString('en-CA');
-      Object.keys(state.items).forEach(id => {
-        const item = state.items[id];
-        if (!item || item.deleted || item.type !== 'item') return;
-        const val = qtyToNumber(item);
-        if (val === null) return;
-        if (!qtyHistory[id]) qtyHistory[id] = {};
-        if (!(today in qtyHistory[id])) {
-          qtyHistory[id][today] = val;
-          fbSyncQtyHistory(id, today, val);
-        }
-      });
-      saveQtyHistory();
-      localStorage.setItem('checklist-qty-initialized', '1');
-    }
-
     function genId() {
       return '_' + Math.random().toString(36).substr(2, 9);
     }
@@ -3232,7 +3214,6 @@
 
     loadState();
     loadQtyHistory();
-    initQtyHistoryIfNeeded();
     list.appendChild(createAddRow());
     render();
     initTitleEdit(document.querySelector('h1'));
