@@ -958,7 +958,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v60';
+    const APP_VERSION = 'my-checklist-v61';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2310,6 +2310,38 @@
       setTimeout(() => inp.focus(), 50);
     }
 
+    function getSerpApiKey() {
+      return localStorage.getItem('serpapi-key') || '';
+    }
+    function saveSerpApiKey(key) {
+      localStorage.setItem('serpapi-key', key.trim());
+    }
+
+    function openSerpApiKeySettings(onSaved) {
+      const overlay = document.createElement('div');
+      overlay.className = 'api-key-dialog-overlay';
+      const dialog = document.createElement('div');
+      dialog.className = 'api-key-dialog';
+      const currentKey = getSerpApiKey();
+      dialog.innerHTML =
+        '<h3>SerpAPI Key</h3>' +
+        '<p style="font-size:0.78rem;color:#6b7280;margin:0">Get a free key at serpapi.com. Stored locally on this device only.</p>' +
+        '<input class="api-key-input" type="password" placeholder="Paste your SerpAPI key\u2026" value="' + currentKey.replace(/"/g, '&quot;') + '">' +
+        '<button class="api-key-save-btn">Save</button>' +
+        '<button class="api-key-cancel-btn">Cancel</button>';
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+      const inp = dialog.querySelector('.api-key-input');
+      dialog.querySelector('.api-key-save-btn').addEventListener('click', () => {
+        saveSerpApiKey(inp.value);
+        overlay.remove();
+        if (onSaved) onSaved();
+      });
+      dialog.querySelector('.api-key-cancel-btn').addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      setTimeout(() => inp.focus(), 50);
+    }
+
     function openReceiptScanner(fileInput) {
       if (!getApiKey()) {
         openApiKeySettings();
@@ -3242,6 +3274,10 @@
     // ── Price Check Overlay ───────────────────────────────────────────────────
 
     function showPriceCheckOverlay() {
+      if (!getSerpApiKey()) {
+        openSerpApiKeySettings(() => showPriceCheckOverlay());
+        return;
+      }
       const overlay = document.createElement('div');
       overlay.className = 'usage-dialog';
 
@@ -3285,7 +3321,7 @@
         searchBtn.disabled = true;
 
         try {
-          const resp = await fetch('/api/price-check?q=' + encodeURIComponent(query));
+          const resp = await fetch('/api/price-check?q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(getSerpApiKey()));
           const data = await resp.json();
 
           resultsArea.innerHTML = '';
