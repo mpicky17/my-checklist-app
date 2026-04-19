@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v72';
+    const APP_VERSION = 'my-checklist-v73';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3546,6 +3546,7 @@
     function _parseAmazon(html) {
       var products = [];
       var cards = html.split('data-component-type="s-search-result"');
+      console.log('Amazon parser: ' + (cards.length - 1) + ' search result cards found');
       for (var i = 1; i < cards.length && products.length < 10; i++) {
         var card = cards[i];
         try {
@@ -3553,7 +3554,11 @@
           var brand = brandM ? brandM[1].trim() : '';
           var titleM = card.match(/a-size-base-plus a-spacing-none a-color-base a-text-normal"><span>([^<]+)/);
           var title = titleM ? titleM[1].trim() : '';
-          if (!title) continue;
+          if (!title) {
+            var imgAltM2 = card.match(/alt="([^"]{10,})"[^>]*class="s-image"/);
+            console.log('Amazon card ' + i + ': no title match, img alt=' + (imgAltM2 ? '"' + imgAltM2[1].substring(0, 60) + '"' : 'none'));
+            continue;
+          }
           var imgAltM = card.match(/alt="([^"]{10,})"[^>]*class="s-image"/);
           var imgAlt = imgAltM ? imgAltM[1].trim() : '';
           var fullTitle = imgAlt.length > title.length ? imgAlt : (brand && !title.startsWith(brand) ? brand + ' ' + title : title);
@@ -3562,7 +3567,10 @@
           var priceM = card.match(/<span class="a-price"[^>]*data-a-size="xl"[^>]*>[\s\S]*?<span class="a-offscreen">([^<]+)/);
           var priceStr = priceM ? priceM[1].trim() : '';
           var price = _parsePrice(priceStr);
-          if (!price) continue;
+          if (!price) {
+            console.log('Amazon card ' + i + ': title="' + title.substring(0, 50) + '" but no price (data-a-size="xl" ' + (card.indexOf('data-a-size="xl"') !== -1 ? 'exists' : 'MISSING') + ', a-offscreen ' + (card.indexOf('a-offscreen') !== -1 ? 'exists' : 'MISSING') + ')');
+            continue;
+          }
           // Amazon unit price e.g. "($2.28/100 Sheets)"
           var unitM = card.match(/\([\s\S]*?<span class="a-offscreen">([^<]+)<\/span>[^)]*\/([\w\s]+)\)/);
           var unitPrice = null, unitLabel = '';
