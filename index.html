@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v79';
+    const APP_VERSION = 'my-checklist-v80';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3805,20 +3805,39 @@
         // Stagger Instacart requests to avoid IP collision / rate-limiting
         var apiKey = getScraperApiKey();
 
+        function diagHtml(html) {
+          var titleM = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+          var title = titleM ? titleM[1].trim() : '(no title)';
+          var lower = html.toLowerCase();
+          var markers = [];
+          if (lower.indexOf('access denied') !== -1) markers.push('ACCESS_DENIED');
+          if (lower.indexOf('verify you are') !== -1 || lower.indexOf('are you a human') !== -1) markers.push('HUMAN_CHECK');
+          if (lower.indexOf('blocked') !== -1) markers.push('BLOCKED');
+          if (lower.indexOf('cloudflare') !== -1) markers.push('CLOUDFLARE');
+          if (lower.indexOf('robot') !== -1 || lower.indexOf('bot detection') !== -1) markers.push('BOT_DETECT');
+          if (lower.indexOf('rate limit') !== -1 || lower.indexOf('too many requests') !== -1) markers.push('RATE_LIMIT');
+          return 'title="' + title.substring(0, 80) + '"' + (markers.length ? ', flags=[' + markers.join(',') + ']' : '');
+        }
+
         function fetchRetailer(r, scraperUrl, isRetry, onDone) {
           var fetchUrl = isRetry ? scraperUrl + '&_nocache=' + Date.now() : scraperUrl;
           var t0 = performance.now();
           fetch(fetchUrl)
             .then(function(resp) {
-              if (!resp.ok) throw new Error('HTTP ' + resp.status);
+              if (!resp.ok) {
+                return resp.text().then(function(body) {
+                  throw new Error('HTTP ' + resp.status + ' — ' + body.substring(0, 200));
+                });
+              }
               return resp.text();
             })
             .then(function(html) {
               var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+              var diag = r.render ? ', ' + diagHtml(html) : '';
               console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: HTML length=' + html.length
                 + ', product links=' + (html.match(/href="\/products\//g) || []).length
                 + ', has "Current price"=' + (html.indexOf('Current price:') !== -1)
-                + ', has "captcha"=' + (html.toLowerCase().indexOf('captcha') !== -1));
+                + diag);
               var products = r.parse(html);
               if (products.length === 0 && r.render && !isRetry) {
                 console.log(r.name + ': 0 products parsed, retrying in 5s…');
