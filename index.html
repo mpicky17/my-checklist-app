@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v78';
+    const APP_VERSION = 'my-checklist-v79';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3856,7 +3856,7 @@
           var targetUrl = r.url(query);
           return 'https://api.scraperapi.com?api_key=' + encodeURIComponent(apiKey)
             + '&url=' + encodeURIComponent(targetUrl)
-            + (r.render ? '&render=true&device_type=mobile' : '');
+            + (r.render ? '&render=true' : '');
         }
 
         // Fire Amazon immediately (fast, no render conflict)
