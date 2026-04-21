@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v86';
+    const APP_VERSION = 'my-checklist-v87';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3820,7 +3820,7 @@
         }
 
         function fetchRetailer(r, scraperUrl, isRetry, onDone) {
-          var fetchUrl = isRetry ? scraperUrl + '&_nocache=' + Date.now() : scraperUrl;
+          var fetchUrl = (isRetry || r.render) ? scraperUrl + '&_nocache=' + Date.now() : scraperUrl;
           var t0 = performance.now();
           fetch(fetchUrl)
             .then(function(resp) {

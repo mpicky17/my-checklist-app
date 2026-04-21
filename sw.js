@@ -2,7 +2,7 @@
 // Cache-first for assets, network-first for HTML.
 // Bump CACHE_NAME (and APP_VERSION in index.html) to invalidate cache on updates.
 
-const CACHE_NAME = 'my-checklist-v86';
+const CACHE_NAME = 'my-checklist-v87';
 
 const ASSETS_TO_CACHE = [
   './',
