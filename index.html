@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v87';
+    const APP_VERSION = 'my-checklist-v88';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3622,6 +3622,31 @@
       return products;
     }
 
+    function _parseCostco(text) {
+      var products = [];
+      try {
+        var data = JSON.parse(text);
+        var docs = (data.response && data.response.docs) || [];
+        for (var i = 0; i < docs.length && products.length < 10; i++) {
+          var doc = docs[i];
+          var title = doc.item_name || doc.Description || '';
+          if (!title) continue;
+          var priceVal = doc.item_location_pricing_salePrice || doc.item_location_pricing_price || 0;
+          if (!priceVal) continue;
+          var price = parseFloat(priceVal);
+          var priceStr = '$' + price.toFixed(2);
+          var link = doc.item_url || ('https://www.costco.com/' + (doc.slug || doc.item_number || '') + '.html');
+          var calc = _calcUnitPrice(title, price);
+          products.push({ retailer: 'Costco', title: title, price: priceStr, priceNum: price,
+            unitPrice: calc ? calc.unitPrice.toFixed(4) : null, unitLabel: calc ? calc.unitLabel : null, link: link });
+        }
+      } catch (e) {
+        console.log('Costco JSON parse error:', e.message);
+        console.log('Costco response start:', text.substring(0, 500));
+      }
+      return products;
+    }
+
     // ── Compare Retailers Overlay ────────────────────────────────────────────
 
     function showCompareRetailersOverlay() {
@@ -3672,7 +3697,7 @@
       var retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
       var retailerTargets = [
         { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, render: false },
-        { name: 'Costco', url: function(q) { return 'https://www.instacart.com/store/costco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Costco'); }, render: true },
+        { name: 'Costco', url: function(q) { return 'https://search.costco.com/api/apps/www_costco_com/query/www_costco_com_navigation?q=' + encodeURIComponent(q) + '&start=0&rows=24&whloc=1-wh'; }, parse: _parseCostco, render: false },
         { name: 'Jewel-Osco', url: function(q) { return 'https://www.instacart.com/store/jewel-osco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Jewel-Osco'); }, render: true },
       ];
 
@@ -3838,6 +3863,9 @@
                 + ', product links=' + (html.match(/href="\/products\//g) || []).length
                 + ', has "Current price"=' + (html.indexOf('Current price:') !== -1)
                 + diag);
+              if (r.name === 'Costco' && !r.render) {
+                try { var j = JSON.parse(html); console.log('Costco API: ' + ((j.response && j.response.docs) || []).length + ' docs in response'); } catch(e) {}
+              }
               var products = r.parse(html);
               if (products.length === 0 && r.render && !isRetry) {
                 console.log(r.name + ': 0 products parsed, retrying in 5s…');
