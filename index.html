@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v96';
+    const APP_VERSION = 'my-checklist-v97';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3867,15 +3867,21 @@
         }
 
         // Build fetch URL based on service type
-        function buildFetchUrl(r, q) {
-          if (r.service === 'scraperapi') {
-            return 'https://api.scraperapi.com?api_key=' + encodeURIComponent(scraperApiKey)
-              + '&url=' + encodeURIComponent(r.url(q));
-          }
-          if (r.service === 'apify') {
-            var actorId = 'cryptolegit~instacart-product-intelligence';
-            return 'https://api.apify.com/v2/acts/' + actorId + '/run-sync-get-dataset-items?token=' + encodeURIComponent(apifyToken);
-          }
+        function buildScraperApiUrl(r, q) {
+          return 'https://api.scraperapi.com?api_key=' + encodeURIComponent(scraperApiKey)
+            + '&url=' + encodeURIComponent(r.url(q));
+        }
+
+        // Apify endpoints
+        var apifyActorId = 'cryptolegit~instacart-product-intelligence';
+        function apifyStartUrl() {
+          return 'https://api.apify.com/v2/acts/' + apifyActorId + '/runs?token=' + encodeURIComponent(apifyToken);
+        }
+        function apifyPollUrl(runId) {
+          return 'https://api.apify.com/v2/actor-runs/' + runId + '?token=' + encodeURIComponent(apifyToken);
+        }
+        function apifyDatasetUrl(datasetId) {
+          return 'https://api.apify.com/v2/datasets/' + datasetId + '/items?token=' + encodeURIComponent(apifyToken);
         }
 
         // Build Apify POST body
@@ -3883,70 +3889,193 @@
           return JSON.stringify({ mode: 'search', store: r.store, queries: [q], maxProducts: 10, zipCodes: [getZipCode()] });
         }
 
-        function fetchRetailer(r, fetchUrl, isRetry, onDone) {
+        // Format elapsed time for display
+        function fmtElapsed(ms) {
+          var s = Math.floor(ms / 1000);
+          if (s < 60) return s + 's';
+          return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+        }
+
+        // Fetch ScraperAPI retailer (Amazon)
+        function fetchScraperApi(r, isRetry) {
           var t0 = performance.now();
-          var isApify = r.service === 'apify';
-          var fetchOpts = isApify ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: buildApifyBody(r, query) } : {};
-          console.log(r.name + (isRetry ? ' (retry)' : '') + ': ' + (isApify ? 'Apify' : 'ScraperAPI') + ' request started');
-          fetch(fetchUrl, fetchOpts)
+          var tag = r.name + (isRetry ? ' (retry)' : '');
+          var fetchUrl = buildScraperApiUrl(r, query);
+          console.log(tag + ': ScraperAPI request started');
+          fetch(fetchUrl)
             .then(function(resp) {
               if (!resp.ok) {
-                return resp.text().then(function(body) {
-                  throw new Error('HTTP ' + resp.status + ' — ' + body.substring(0, 500));
-                });
+                return resp.text().then(function(body) { throw new Error('HTTP ' + resp.status + ' — ' + body.substring(0, 500)); });
               }
               return resp.text();
             })
             .then(function(text) {
               var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-              if (isApify) {
-                console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: Apify response — length=' + text.length);
-              } else {
-                console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: HTML length=' + text.length
-                  + ', product links=' + (text.match(/href="\/products\//g) || []).length
-                  + ', has "Current price"=' + (text.indexOf('Current price:') !== -1)
-                  + ', ' + diagHtml(text));
-              }
+              console.log(tag + ' [' + elapsed + 's]: HTML length=' + text.length
+                + ', product links=' + (text.match(/href="\/products\//g) || []).length
+                + ', has "Current price"=' + (text.indexOf('Current price:') !== -1)
+                + ', ' + diagHtml(text));
               var products = r.parse(text);
               console.log(r.name + ': parsed ' + products.length + ' products');
-              if (products.length === 0 && isApify && !isRetry) {
-                console.log(r.name + ': 0 products parsed, retrying in 5s…');
-                setTimeout(function() { fetchRetailer(r, fetchUrl, true, onDone); }, 5000);
-                return;
-              }
               allResults[r.name] = products;
               updateTopCard(r.name, products, null);
               loadingDivs[r.name].remove();
               renderResults();
               completed++;
               if (completed === 3) compareBtn.disabled = false;
-              if (onDone) onDone();
             })
             .catch(function(err) {
               var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-              var isCors = err.message === 'Failed to fetch' || err.message.indexOf('CORS') !== -1;
-              if (isCors && isApify) {
-                console.log(r.name + ' [' + elapsed + 's]: Apify CORS BLOCKED — ' + err.message);
-              }
-              if (isApify && !isRetry) {
-                console.log(r.name + ' [' + elapsed + 's]: ' + err.message + ', retrying in 5s…');
-                setTimeout(function() { fetchRetailer(r, fetchUrl, true, onDone); }, 5000);
-                return;
-              }
-              console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: ' + err.message);
+              console.log(tag + ' [' + elapsed + 's]: ' + err.message);
               allResults[r.name] = [];
               updateTopCard(r.name, null, err.message);
               loadingDivs[r.name].remove();
               renderResults();
               completed++;
               if (completed === 3) compareBtn.disabled = false;
-              if (onDone) onDone();
             });
+        }
+
+        // Fetch Apify retailer (Costco/Jewel) — async: start run → poll → fetch dataset
+        var APIFY_POLL_INTERVAL = 10000; // 10s between polls
+        var APIFY_MAX_WAIT = 600000;     // 10 min max before giving up
+
+        function fetchApify(r, isRetry) {
+          var t0 = performance.now();
+          var tag = r.name + (isRetry ? ' (retry)' : '');
+
+          // Update loading text with elapsed timer
+          var timerInterval = setInterval(function() {
+            var el = fmtElapsed(performance.now() - t0);
+            if (loadingDivs[r.name]) {
+              loadingDivs[r.name].innerHTML = '<div class="compare-spinner"></div>Searching ' + r.name + ' via Apify\u2026 (' + el + ')';
+            }
+          }, 1000);
+
+          function finish(products, errMsg) {
+            clearInterval(timerInterval);
+            if (products) {
+              allResults[r.name] = products;
+              updateTopCard(r.name, products, null);
+            } else {
+              allResults[r.name] = [];
+              updateTopCard(r.name, null, errMsg);
+            }
+            loadingDivs[r.name].remove();
+            renderResults();
+            completed++;
+            if (completed === 3) compareBtn.disabled = false;
+          }
+
+          // Step 1: Start the actor run
+          console.log(tag + ': Apify run starting…');
+          fetch(apifyStartUrl(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: buildApifyBody(r, query)
+          })
+          .then(function(resp) {
+            if (!resp.ok) {
+              return resp.text().then(function(body) { throw new Error('Start failed: HTTP ' + resp.status + ' — ' + body.substring(0, 500)); });
+            }
+            return resp.json();
+          })
+          .then(function(json) {
+            var runId = json.data.id;
+            var datasetId = json.data.defaultDatasetId;
+            var status = json.data.status;
+            console.log(tag + ': Apify run started (runId=' + runId + ', datasetId=' + datasetId + ', status=' + status + ')');
+
+            // Step 2: Poll for completion
+            function poll() {
+              var elapsed = performance.now() - t0;
+              if (elapsed > APIFY_MAX_WAIT) {
+                console.log(tag + ' [' + fmtElapsed(elapsed) + ']: gave up after max wait time');
+                if (!isRetry) {
+                  console.log(tag + ': retrying with new run in 5s…');
+                  setTimeout(function() { fetchApify(r, true); }, 5000);
+                } else {
+                  finish(null, 'Timed out after ' + fmtElapsed(elapsed));
+                }
+                return;
+              }
+
+              fetch(apifyPollUrl(runId))
+                .then(function(resp) { return resp.json(); })
+                .then(function(json) {
+                  var st = json.data.status;
+                  var el = fmtElapsed(performance.now() - t0);
+                  console.log(tag + ': polling… status=' + st + ' (' + el + ' elapsed)');
+
+                  if (st === 'SUCCEEDED') {
+                    // Step 3: Fetch dataset items
+                    console.log(tag + ' [' + el + ']: run SUCCEEDED, fetching dataset…');
+                    fetch(apifyDatasetUrl(datasetId))
+                      .then(function(resp) { return resp.text(); })
+                      .then(function(text) {
+                        var totalElapsed = ((performance.now() - t0) / 1000).toFixed(1);
+                        console.log(tag + ' [' + totalElapsed + 's]: dataset response — length=' + text.length);
+                        var products = r.parse(text);
+                        console.log(r.name + ': parsed ' + products.length + ' products');
+                        if (products.length === 0 && !isRetry) {
+                          console.log(r.name + ': 0 products parsed, retrying with new run in 5s…');
+                          clearInterval(timerInterval);
+                          setTimeout(function() { fetchApify(r, true); }, 5000);
+                          return;
+                        }
+                        finish(products, null);
+                      })
+                      .catch(function(err) {
+                        console.log(tag + ': dataset fetch error — ' + err.message);
+                        finish(null, 'Dataset fetch failed: ' + err.message);
+                      });
+
+                  } else if (st === 'FAILED' || st === 'TIMED-OUT' || st === 'ABORTED') {
+                    var msg = json.data.statusMessage || st;
+                    console.log(tag + ' [' + el + ']: run ' + st + ' — ' + msg);
+                    if (!isRetry) {
+                      console.log(tag + ': retrying with new run in 5s…');
+                      clearInterval(timerInterval);
+                      setTimeout(function() { fetchApify(r, true); }, 5000);
+                    } else {
+                      finish(null, 'Apify run ' + st + ': ' + msg);
+                    }
+
+                  } else {
+                    // Still RUNNING or READY — poll again
+                    setTimeout(poll, APIFY_POLL_INTERVAL);
+                  }
+                })
+                .catch(function(err) {
+                  console.log(tag + ': poll error — ' + err.message + ', will retry poll…');
+                  setTimeout(poll, APIFY_POLL_INTERVAL);
+                });
+            }
+
+            // If already finished (unlikely but possible), handle immediately
+            if (status === 'SUCCEEDED') {
+              poll(); // will detect SUCCEEDED on first poll
+            } else {
+              setTimeout(poll, APIFY_POLL_INTERVAL);
+            }
+          })
+          .catch(function(err) {
+            var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+            console.log(tag + ' [' + elapsed + 's]: ' + err.message);
+            if (!isRetry) {
+              console.log(tag + ': retrying in 5s…');
+              clearInterval(timerInterval);
+              setTimeout(function() { fetchApify(r, true); }, 5000);
+            } else {
+              finish(null, err.message);
+            }
+          });
         }
 
         // Fire all retailers — Amazon via ScraperAPI, Costco/Jewel via Apify (parallel)
         retailerTargets.forEach(function(r) {
-          fetchRetailer(r, buildFetchUrl(r, query), false, null);
+          if (r.service === 'scraperapi') fetchScraperApi(r, false);
+          else if (r.service === 'apify') fetchApify(r, false);
         });
       });
 
