@@ -2,7 +2,7 @@
 // Cache-first for assets, network-first for HTML.
 // Bump CACHE_NAME (and APP_VERSION in index.html) to invalidate cache on updates.
 
-const CACHE_NAME = 'my-checklist-v93';
+const CACHE_NAME = 'my-checklist-v94';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -36,6 +36,9 @@ self.addEventListener('activate', event => {
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+
+  // Skip external API calls (ScrapingBee, etc.) — let the browser handle them directly
+  if (!event.request.url.startsWith(self.location.origin)) return;
 
   // Network-first for HTML navigation — always serve the latest index.html when online
   if (event.request.mode === 'navigate') {
