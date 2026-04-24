@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v91';
+    const APP_VERSION = 'my-checklist-v92';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3696,7 +3696,7 @@
 
       var retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
       var retailerTargets = [
-        { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, render: false, ultra: false },
+        { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, render: true, ultra: false },
         { name: 'Costco', url: function(q) { return 'https://search.costco.com/api/apps/www_costco_com/query/www_costco_com_navigation?q=' + encodeURIComponent(q) + '&start=0&rows=24&whloc=1-wh'; }, parse: _parseCostco, render: true, ultra: true },
         { name: 'Jewel-Osco', url: function(q) { return 'https://www.instacart.com/store/jewel-osco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Jewel-Osco'); }, render: true, ultra: true },
       ];
@@ -3867,7 +3867,7 @@
                 try { var j = JSON.parse(html); console.log('Costco API: ' + ((j.response && j.response.docs) || []).length + ' docs in response'); } catch(e) {}
               }
               var products = r.parse(html);
-              if (products.length === 0 && r.render && !isRetry) {
+              if (products.length === 0 && r.ultra && !isRetry) {
                 console.log(r.name + ': 0 products parsed, retrying in 5s…');
                 setTimeout(function() { fetchRetailer(r, scraperUrl, true, onDone); }, 5000);
                 return;
@@ -3882,7 +3882,7 @@
             })
             .catch(function(err) {
               var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-              if (r.render && !isRetry) {
+              if (r.ultra && !isRetry) {
                 console.log(r.name + ' [' + elapsed + 's]: ' + err.message + ', retrying in 5s…');
                 setTimeout(function() { fetchRetailer(r, scraperUrl, true, onDone); }, 5000);
                 return;
@@ -3903,16 +3903,16 @@
           var targetUrl = r.url(query);
           var url = 'https://app.scrapingbee.com/api/v1/?api_key=' + encodeURIComponent(apiKey)
             + '&url=' + encodeURIComponent(targetUrl)
-            + '&render_js=' + (r.render ? 'true' : 'false');
-          if (r.ultra) url += '&premium_proxy=true';
+            + '&render_js=true&block_resources=false';
+          if (r.ultra) url += '&stealth_proxy=true';
           return url;
         }
 
-        // Fire Amazon immediately (fast, no render conflict)
-        // Run Instacart stores sequentially so each gets full rendering resources
+        // Fire Amazon immediately (fast, no stealth conflict)
+        // Run protected stores sequentially so each gets full rendering resources
         var renderQueue = [];
         retailerTargets.forEach(function(r) {
-          if (!r.render) {
+          if (!r.ultra) {
             fetchRetailer(r, buildScraperUrl(r, query), false, null);
           } else {
             renderQueue.push(r);
