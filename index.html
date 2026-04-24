@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v90';
+    const APP_VERSION = 'my-checklist-v91';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3697,7 +3697,7 @@
       var retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
       var retailerTargets = [
         { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, render: false, ultra: false },
-        { name: 'Costco', url: function(q) { return 'https://search.costco.com/api/apps/www_costco_com/query/www_costco_com_navigation?q=' + encodeURIComponent(q) + '&start=0&rows=24&whloc=1-wh'; }, parse: _parseCostco, render: false, ultra: true },
+        { name: 'Costco', url: function(q) { return 'https://search.costco.com/api/apps/www_costco_com/query/www_costco_com_navigation?q=' + encodeURIComponent(q) + '&start=0&rows=24&whloc=1-wh'; }, parse: _parseCostco, render: true, ultra: true },
         { name: 'Jewel-Osco', url: function(q) { return 'https://www.instacart.com/store/jewel-osco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Jewel-Osco'); }, render: true, ultra: true },
       ];
 
@@ -3845,7 +3845,7 @@
         }
 
         function fetchRetailer(r, scraperUrl, isRetry, onDone) {
-          var fetchUrl = (isRetry || r.render) ? scraperUrl + '&_nocache=' + Date.now() : scraperUrl;
+          var fetchUrl = scraperUrl;
           var t0 = performance.now();
           fetch(fetchUrl)
             .then(function(resp) {
