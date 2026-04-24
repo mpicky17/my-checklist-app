@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v89';
+    const APP_VERSION = 'my-checklist-v90';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2403,30 +2403,30 @@
       setTimeout(() => inp.focus(), 50);
     }
 
-    function getScraperApiKey() {
-      return localStorage.getItem('scraperapi-key') || '';
+    function getScrapingBeeKey() {
+      return localStorage.getItem('scrapingbee-key') || '';
     }
-    function saveScraperApiKey(key) {
-      localStorage.setItem('scraperapi-key', key.trim());
+    function saveScrapingBeeKey(key) {
+      localStorage.setItem('scrapingbee-key', key.trim());
     }
 
-    function openScraperApiKeySettings(onSaved) {
+    function openScrapingBeeKeySettings(onSaved) {
       const overlay = document.createElement('div');
       overlay.className = 'api-key-dialog-overlay';
       const dialog = document.createElement('div');
       dialog.className = 'api-key-dialog';
-      const currentKey = getScraperApiKey();
+      const currentKey = getScrapingBeeKey();
       dialog.innerHTML =
-        '<h3>ScraperAPI Key</h3>' +
-        '<p style="font-size:0.78rem;color:#6b7280;margin:0">Get a free key at scraperapi.com. Stored locally on this device only.</p>' +
-        '<input class="api-key-input" type="password" placeholder="Paste your ScraperAPI key\u2026" value="' + currentKey.replace(/"/g, '&quot;') + '">' +
+        '<h3>ScrapingBee Key</h3>' +
+        '<p style="font-size:0.78rem;color:#6b7280;margin:0">Get a free key at scrapingbee.com. Stored locally on this device only.</p>' +
+        '<input class="api-key-input" type="password" placeholder="Paste your ScrapingBee key\u2026" value="' + currentKey.replace(/"/g, '&quot;') + '">' +
         '<button class="api-key-save-btn">Save</button>' +
         '<button class="api-key-cancel-btn">Cancel</button>';
       overlay.appendChild(dialog);
       document.body.appendChild(overlay);
       const inp = dialog.querySelector('.api-key-input');
       dialog.querySelector('.api-key-save-btn').addEventListener('click', () => {
-        saveScraperApiKey(inp.value);
+        saveScrapingBeeKey(inp.value);
         overlay.remove();
         if (onSaved) onSaved();
       });
@@ -3650,8 +3650,8 @@
     // ── Compare Retailers Overlay ────────────────────────────────────────────
 
     function showCompareRetailersOverlay() {
-      if (!getScraperApiKey()) {
-        openScraperApiKeySettings(() => showCompareRetailersOverlay());
+      if (!getScrapingBeeKey()) {
+        openScrapingBeeKeySettings(() => showCompareRetailersOverlay());
         return;
       }
       var overlay = document.createElement('div');
@@ -3826,9 +3826,9 @@
           }
         }
 
-        // Call ScraperAPI directly from the browser (no Vercel function needed)
+        // Call ScrapingBee directly from the browser
         // Stagger Instacart requests to avoid IP collision / rate-limiting
-        var apiKey = getScraperApiKey();
+        var apiKey = getScrapingBeeKey();
 
         function diagHtml(html) {
           var titleM = html.match(/<title[^>]*>([^<]*)<\/title>/i);
@@ -3898,13 +3898,14 @@
             });
         }
 
-        // Build ScraperAPI URL for a retailer
+        // Build ScrapingBee URL for a retailer
         function buildScraperUrl(r, query) {
           var targetUrl = r.url(query);
-          return 'https://api.scraperapi.com?api_key=' + encodeURIComponent(apiKey)
+          var url = 'https://app.scrapingbee.com/api/v1/?api_key=' + encodeURIComponent(apiKey)
             + '&url=' + encodeURIComponent(targetUrl)
-            + (r.render ? '&render=true' : '')
-            + (r.ultra ? '&ultra_premium=true' : '');
+            + '&render_js=' + (r.render ? 'true' : 'false');
+          if (r.ultra) url += '&premium_proxy=true';
+          return url;
         }
 
         // Fire Amazon immediately (fast, no render conflict)
