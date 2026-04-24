@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v94';
+    const APP_VERSION = 'my-checklist-v95';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2403,36 +2403,46 @@
       setTimeout(() => inp.focus(), 50);
     }
 
-    function getScrapingBeeKey() {
-      return localStorage.getItem('scrapingbee-key') || '';
+    function getScraperApiKey() {
+      return localStorage.getItem('scraperapi-key') || '';
     }
-    function saveScrapingBeeKey(key) {
-      localStorage.setItem('scrapingbee-key', key.trim());
+    function saveScraperApiKey(key) {
+      localStorage.setItem('scraperapi-key', key.trim());
+    }
+    function getApifyToken() {
+      return localStorage.getItem('apify-token') || '';
+    }
+    function saveApifyToken(token) {
+      localStorage.setItem('apify-token', token.trim());
     }
 
-    function openScrapingBeeKeySettings(onSaved) {
+    function openScraperKeySettings(onSaved) {
       const overlay = document.createElement('div');
       overlay.className = 'api-key-dialog-overlay';
       const dialog = document.createElement('div');
       dialog.className = 'api-key-dialog';
-      const currentKey = getScrapingBeeKey();
+      const curScraper = getScraperApiKey();
+      const curApify = getApifyToken();
       dialog.innerHTML =
-        '<h3>ScrapingBee Key</h3>' +
-        '<p style="font-size:0.78rem;color:#6b7280;margin:0">Get a free key at scrapingbee.com. Stored locally on this device only.</p>' +
-        '<input class="api-key-input" type="password" placeholder="Paste your ScrapingBee key\u2026" value="' + currentKey.replace(/"/g, '&quot;') + '">' +
+        '<h3>API Keys</h3>' +
+        '<p style="font-size:0.78rem;color:#6b7280;margin:0 0 6px">Stored locally on this device only.</p>' +
+        '<label style="font-size:0.8rem;font-weight:600">ScraperAPI <span style="font-weight:400;color:#6b7280">(free at scraperapi.com)</span></label>' +
+        '<input class="api-key-input scraper-key" type="password" placeholder="Paste your ScraperAPI key\u2026" value="' + curScraper.replace(/"/g, '&quot;') + '">' +
+        '<label style="font-size:0.8rem;font-weight:600;margin-top:8px;display:block">Apify Token <span style="font-weight:400;color:#6b7280">(free at apify.com)</span></label>' +
+        '<input class="api-key-input apify-token" type="password" placeholder="Paste your Apify API token\u2026" value="' + curApify.replace(/"/g, '&quot;') + '">' +
         '<button class="api-key-save-btn">Save</button>' +
         '<button class="api-key-cancel-btn">Cancel</button>';
       overlay.appendChild(dialog);
       document.body.appendChild(overlay);
-      const inp = dialog.querySelector('.api-key-input');
       dialog.querySelector('.api-key-save-btn').addEventListener('click', () => {
-        saveScrapingBeeKey(inp.value);
+        saveScraperApiKey(dialog.querySelector('.scraper-key').value);
+        saveApifyToken(dialog.querySelector('.apify-token').value);
         overlay.remove();
         if (onSaved) onSaved();
       });
       dialog.querySelector('.api-key-cancel-btn').addEventListener('click', () => overlay.remove());
       overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-      setTimeout(() => inp.focus(), 50);
+      setTimeout(() => dialog.querySelector('.apify-token').value ? dialog.querySelector('.scraper-key').focus() : dialog.querySelector('.apify-token').focus(), 50);
     }
 
     function openReceiptScanner(fileInput) {
@@ -3622,27 +3632,29 @@
       return products;
     }
 
-    function _parseCostco(text) {
+    function _parseApifyInstacart(text, retailer) {
       var products = [];
       try {
         var data = JSON.parse(text);
-        var docs = (data.response && data.response.docs) || [];
-        for (var i = 0; i < docs.length && products.length < 10; i++) {
-          var doc = docs[i];
-          var title = doc.item_name || doc.Description || '';
-          if (!title) continue;
-          var priceVal = doc.item_location_pricing_salePrice || doc.item_location_pricing_price || 0;
-          if (!priceVal) continue;
-          var price = parseFloat(priceVal);
-          var priceStr = '$' + price.toFixed(2);
-          var link = doc.item_url || ('https://www.costco.com/' + (doc.slug || doc.item_number || '') + '.html');
-          var calc = _calcUnitPrice(title, price);
-          products.push({ retailer: 'Costco', title: title, price: priceStr, priceNum: price,
+        if (!Array.isArray(data)) data = [data];
+        console.log(retailer + ' Apify: ' + data.length + ' items, fields=' + (data[0] ? Object.keys(data[0]).join(',') : 'none'));
+        for (var i = 0; i < data.length && products.length < 10; i++) {
+          var item = data[i];
+          var title = item.name || item.productName || item.title || '';
+          if (!title) { console.log(retailer + ' Apify item ' + i + ': no title field'); continue; }
+          var priceStr = item.priceString || item.price || '';
+          var price = _parsePrice(priceStr);
+          if (!price) { console.log(retailer + ' Apify item ' + i + ': "' + title.substring(0, 40) + '" — no price (priceString=' + priceStr + ')'); continue; }
+          var link = item.url || item.productUrl || '';
+          var sizeText = item.size || item.unitSize || '';
+          var combined = title + (sizeText ? ', ' + sizeText : '');
+          var calc = _calcUnitPrice(combined, price);
+          products.push({ retailer: retailer, title: title, price: '$' + price.toFixed(2), priceNum: price,
             unitPrice: calc ? calc.unitPrice.toFixed(4) : null, unitLabel: calc ? calc.unitLabel : null, link: link });
         }
       } catch (e) {
-        console.log('Costco JSON parse error:', e.message);
-        console.log('Costco response start:', text.substring(0, 500));
+        console.log(retailer + ' Apify parse error:', e.message);
+        console.log(retailer + ' response start:', text.substring(0, 500));
       }
       return products;
     }
@@ -3650,8 +3662,8 @@
     // ── Compare Retailers Overlay ────────────────────────────────────────────
 
     function showCompareRetailersOverlay() {
-      if (!getScrapingBeeKey()) {
-        openScrapingBeeKeySettings(() => showCompareRetailersOverlay());
+      if (!getScraperApiKey() || !getApifyToken()) {
+        openScraperKeySettings(() => showCompareRetailersOverlay());
         return;
       }
       var overlay = document.createElement('div');
@@ -3696,9 +3708,9 @@
 
       var retailerCss = { 'Amazon': 'amazon', 'Costco': 'costco', 'Jewel-Osco': 'jewel' };
       var retailerTargets = [
-        { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, render: true, ultra: false },
-        { name: 'Costco', url: function(q) { return 'https://www.instacart.com/store/costco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Costco'); }, render: true, ultra: true },
-        { name: 'Jewel-Osco', url: function(q) { return 'https://www.instacart.com/store/jewel-osco/search/' + encodeURIComponent(q); }, parse: function(h) { return _parseInstacart(h, 'Jewel-Osco'); }, render: true, ultra: true },
+        { name: 'Amazon', url: function(q) { return 'https://www.amazon.com/s?k=' + encodeURIComponent(q); }, parse: _parseAmazon, service: 'scraperapi' },
+        { name: 'Costco', store: 'costco', parse: function(t) { return _parseApifyInstacart(t, 'Costco'); }, service: 'apify' },
+        { name: 'Jewel-Osco', store: 'jewel-osco', parse: function(t) { return _parseApifyInstacart(t, 'Jewel-Osco'); }, service: 'apify' },
       ];
 
       compareBtn.addEventListener('click', function() {
@@ -3826,9 +3838,9 @@
           }
         }
 
-        // Call ScrapingBee directly from the browser
-        // Stagger Instacart requests to avoid IP collision / rate-limiting
-        var apiKey = getScrapingBeeKey();
+        // ScraperAPI for Amazon, Apify for Instacart stores
+        var scraperApiKey = getScraperApiKey();
+        var apifyToken = getApifyToken();
 
         function diagHtml(html) {
           var titleM = html.match(/<title[^>]*>([^<]*)<\/title>/i);
@@ -3844,10 +3856,29 @@
           return 'title="' + title.substring(0, 80) + '"' + (markers.length ? ', flags=[' + markers.join(',') + ']' : '');
         }
 
-        function fetchRetailer(r, scraperUrl, isRetry, onDone) {
-          var fetchUrl = scraperUrl;
+        // Build fetch URL based on service type
+        function buildFetchUrl(r, q) {
+          if (r.service === 'scraperapi') {
+            return 'https://api.scraperapi.com?api_key=' + encodeURIComponent(scraperApiKey)
+              + '&url=' + encodeURIComponent(r.url(q));
+          }
+          if (r.service === 'apify') {
+            var actorId = 'cryptolegit~instacart-product-intelligence';
+            return 'https://api.apify.com/v2/acts/' + actorId + '/run-sync-get-dataset-items?token=' + encodeURIComponent(apifyToken);
+          }
+        }
+
+        // Build Apify POST body
+        function buildApifyBody(r, q) {
+          return JSON.stringify({ mode: 'search', store: r.store, queries: [q], maxProducts: 10 });
+        }
+
+        function fetchRetailer(r, fetchUrl, isRetry, onDone) {
           var t0 = performance.now();
-          fetch(fetchUrl)
+          var isApify = r.service === 'apify';
+          var fetchOpts = isApify ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: buildApifyBody(r, query) } : {};
+          console.log(r.name + (isRetry ? ' (retry)' : '') + ': ' + (isApify ? 'Apify' : 'ScraperAPI') + ' request started');
+          fetch(fetchUrl, fetchOpts)
             .then(function(resp) {
               if (!resp.ok) {
                 return resp.text().then(function(body) {
@@ -3856,20 +3887,21 @@
               }
               return resp.text();
             })
-            .then(function(html) {
+            .then(function(text) {
               var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-              var diag = r.render ? ', ' + diagHtml(html) : '';
-              console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: HTML length=' + html.length
-                + ', product links=' + (html.match(/href="\/products\//g) || []).length
-                + ', has "Current price"=' + (html.indexOf('Current price:') !== -1)
-                + diag);
-              if (r.name === 'Costco' && !r.render) {
-                try { var j = JSON.parse(html); console.log('Costco API: ' + ((j.response && j.response.docs) || []).length + ' docs in response'); } catch(e) {}
+              if (isApify) {
+                console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: Apify response — length=' + text.length);
+              } else {
+                console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: HTML length=' + text.length
+                  + ', product links=' + (text.match(/href="\/products\//g) || []).length
+                  + ', has "Current price"=' + (text.indexOf('Current price:') !== -1)
+                  + ', ' + diagHtml(text));
               }
-              var products = r.parse(html);
-              if (products.length === 0 && r.ultra && !isRetry) {
+              var products = r.parse(text);
+              console.log(r.name + ': parsed ' + products.length + ' products');
+              if (products.length === 0 && isApify && !isRetry) {
                 console.log(r.name + ': 0 products parsed, retrying in 5s…');
-                setTimeout(function() { fetchRetailer(r, scraperUrl, true, onDone); }, 5000);
+                setTimeout(function() { fetchRetailer(r, fetchUrl, true, onDone); }, 5000);
                 return;
               }
               allResults[r.name] = products;
@@ -3882,9 +3914,13 @@
             })
             .catch(function(err) {
               var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-              if (r.ultra && !isRetry) {
+              var isCors = err.message === 'Failed to fetch' || err.message.indexOf('CORS') !== -1;
+              if (isCors && isApify) {
+                console.log(r.name + ' [' + elapsed + 's]: Apify CORS BLOCKED — ' + err.message);
+              }
+              if (isApify && !isRetry) {
                 console.log(r.name + ' [' + elapsed + 's]: ' + err.message + ', retrying in 5s…');
-                setTimeout(function() { fetchRetailer(r, scraperUrl, true, onDone); }, 5000);
+                setTimeout(function() { fetchRetailer(r, fetchUrl, true, onDone); }, 5000);
                 return;
               }
               console.log(r.name + (isRetry ? ' (retry)' : '') + ' [' + elapsed + 's]: ' + err.message);
@@ -3898,33 +3934,10 @@
             });
         }
 
-        // Build ScrapingBee URL for a retailer
-        function buildScraperUrl(r, query) {
-          var targetUrl = r.url(query);
-          var url = 'https://app.scrapingbee.com/api/v1/?api_key=' + encodeURIComponent(apiKey)
-            + '&url=' + encodeURIComponent(targetUrl)
-            + '&render_js=true&block_resources=false';
-          if (r.ultra) url += '&stealth_proxy=true';
-          return url;
-        }
-
-        // Fire Amazon immediately (fast, no stealth conflict)
-        // Run protected stores sequentially so each gets full rendering resources
-        var renderQueue = [];
+        // Fire all retailers — Amazon via ScraperAPI, Costco/Jewel via Apify (parallel)
         retailerTargets.forEach(function(r) {
-          if (!r.ultra) {
-            fetchRetailer(r, buildScraperUrl(r, query), false, null);
-          } else {
-            renderQueue.push(r);
-          }
+          fetchRetailer(r, buildFetchUrl(r, query), false, null);
         });
-
-        function runNextRender() {
-          if (renderQueue.length === 0) return;
-          var r = renderQueue.shift();
-          fetchRetailer(r, buildScraperUrl(r, query), false, runNextRender);
-        }
-        runNextRender();
       });
 
       var doneBtn = document.createElement('button');
