@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v95';
+    const APP_VERSION = 'my-checklist-v96';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2415,6 +2415,12 @@
     function saveApifyToken(token) {
       localStorage.setItem('apify-token', token.trim());
     }
+    function getZipCode() {
+      return localStorage.getItem('compare-zip') || '60563';
+    }
+    function saveZipCode(zip) {
+      localStorage.setItem('compare-zip', zip.trim());
+    }
 
     function openScraperKeySettings(onSaved) {
       const overlay = document.createElement('div');
@@ -2423,6 +2429,7 @@
       dialog.className = 'api-key-dialog';
       const curScraper = getScraperApiKey();
       const curApify = getApifyToken();
+      const curZip = getZipCode();
       dialog.innerHTML =
         '<h3>API Keys</h3>' +
         '<p style="font-size:0.78rem;color:#6b7280;margin:0 0 6px">Stored locally on this device only.</p>' +
@@ -2430,6 +2437,8 @@
         '<input class="api-key-input scraper-key" type="password" placeholder="Paste your ScraperAPI key\u2026" value="' + curScraper.replace(/"/g, '&quot;') + '">' +
         '<label style="font-size:0.8rem;font-weight:600;margin-top:8px;display:block">Apify Token <span style="font-weight:400;color:#6b7280">(free at apify.com)</span></label>' +
         '<input class="api-key-input apify-token" type="password" placeholder="Paste your Apify API token\u2026" value="' + curApify.replace(/"/g, '&quot;') + '">' +
+        '<label style="font-size:0.8rem;font-weight:600;margin-top:8px;display:block">ZIP Code <span style="font-weight:400;color:#6b7280">(for Instacart pricing)</span></label>' +
+        '<input class="api-key-input zip-code" type="text" placeholder="e.g. 60563" value="' + curZip.replace(/"/g, '&quot;') + '">' +
         '<button class="api-key-save-btn">Save</button>' +
         '<button class="api-key-cancel-btn">Cancel</button>';
       overlay.appendChild(dialog);
@@ -2437,6 +2446,7 @@
       dialog.querySelector('.api-key-save-btn').addEventListener('click', () => {
         saveScraperApiKey(dialog.querySelector('.scraper-key').value);
         saveApifyToken(dialog.querySelector('.apify-token').value);
+        saveZipCode(dialog.querySelector('.zip-code').value);
         overlay.remove();
         if (onSaved) onSaved();
       });
@@ -3870,7 +3880,7 @@
 
         // Build Apify POST body
         function buildApifyBody(r, q) {
-          return JSON.stringify({ mode: 'search', store: r.store, queries: [q], maxProducts: 10 });
+          return JSON.stringify({ mode: 'search', store: r.store, queries: [q], maxProducts: 10, zipCodes: [getZipCode()] });
         }
 
         function fetchRetailer(r, fetchUrl, isRetry, onDone) {
