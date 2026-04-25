@@ -1019,7 +1019,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v97';
+    const APP_VERSION = 'my-checklist-v98';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3103,6 +3103,15 @@
     // ── Dismiss keyboard on scroll or outside tap ─────────────────────────────
 
     let _lastFocusTime = 0;
+    let _pendingRender = false;
+
+    // Flush any render that was deferred while a textarea had focus.
+    document.addEventListener('focusout', e => {
+      if (e.target.tagName === 'TEXTAREA' && _pendingRender) {
+        _pendingRender = false;
+        render();
+      }
+    });
 
     // Blur the active textarea when the page scrolls (user is scrolling, not typing).
     // 300 ms grace period ignores the automatic scroll iOS does when the keyboard appears.
@@ -3113,8 +3122,11 @@
 
     // Blur the active textarea when the user taps anywhere outside it.
     // This covers checkbox taps, category-button taps, and bare row/page taps.
+    // 500 ms grace period prevents Android/iOS keyboard suggestion-bar touchstart
+    // events from immediately blurring the field after each keypress.
     document.addEventListener('touchstart', e => {
       if (document.activeElement?.tagName === 'TEXTAREA' && !e.target.closest('textarea')) {
+        if (Date.now() - _lastFocusTime < 500) return;
         document.activeElement.blur();
       }
     }, { passive: true });
@@ -4269,7 +4281,12 @@
 
       if (changed) {
         localStorage.setItem('checklist-v2', JSON.stringify(state));
-        render();
+        // Don't tear down the DOM while the user is typing — defer until blur.
+        if (document.activeElement?.tagName === 'TEXTAREA') {
+          _pendingRender = true;
+        } else {
+          render();
+        }
       }
     }
 
