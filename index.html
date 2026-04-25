@@ -725,6 +725,22 @@
     }
     .receipt-scan-btn:hover { background: #f3f4f6; }
 
+    /* ── Filter bar ──────────────────────────────────────────────────── */
+    #filter-bar { display: flex; align-items: center; gap: 8px; padding: 0 0 10px; }
+    #filter-input {
+      flex: 1; border: 1px solid #d1d5db; border-radius: 6px;
+      padding: 5px 10px; font-size: 0.875rem; color: #1a1a1a;
+      background: #fff; outline: none;
+    }
+    #filter-input:focus { border-color: #9ca3af; }
+    #filter-clear-btn {
+      display: none;
+      background: none; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 0.75rem; padding: 4px 8px; cursor: pointer; color: #4b5563;
+      white-space: nowrap; flex-shrink: 0; touch-action: manipulation;
+    }
+    #filter-clear-btn:hover { background: #f3f4f6; }
+
     .api-settings-btn {
       background: none; border: none; cursor: pointer; font-size: 0.85rem;
       color: #9ca3af; padding: 2px 4px; line-height: 1;
@@ -1015,11 +1031,15 @@
       <button id="price-check-btn" class="receipt-scan-btn">💰 Price Check</button>
       <button id="compare-retailers-btn" class="receipt-scan-btn">🏪 Compare Retailers</button>
     </div>
+    <div id="filter-bar">
+      <input type="text" id="filter-input" placeholder="Type to filter">
+      <button id="filter-clear-btn">Clear</button>
+    </div>
 <div id="list"></div>
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v98';
+    const APP_VERSION = 'my-checklist-v99';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1038,6 +1058,9 @@
 
     // Collapsed category headers — local only, not persisted or synced
     let collapsedHeaders = { A: new Set(), B: new Set(), C: new Set() };
+
+    // Active filter text per layout — local only, not persisted or synced
+    let filterText = { A: '', B: '', C: '' };
 
     // No-ops replaced by real implementations once Firebase is initialized
     let fbSyncItem       = function() {};
@@ -1181,6 +1204,21 @@
 
       list.insertBefore(createHideCheckedBar(), addRow);
 
+      // Pre-compute which category headers have at least one item matching the filter
+      const _filter = filterText[state.current].toLowerCase().trim();
+      const _matchingHeaders = new Set();
+      if (_filter) {
+        state.layouts[state.current].forEach(id => {
+          const it = state.items[id];
+          if (!it || it.deleted || it.type !== 'item') return;
+          if (state.hideChecked[state.current] && it.checked) return;
+          if (it.text.toLowerCase().includes(_filter)) {
+            const catId = it.categoryIds?.[state.current];
+            if (catId) _matchingHeaders.add(catId);
+          }
+        });
+      }
+
       state.layouts[state.current].forEach(id => {
         if (!state.items[id]) return;
         const item = state.items[id];
@@ -1188,6 +1226,10 @@
         if (item.type === 'item') {
           if (item.categoryIds?.[state.current] && collapsedHeaders[state.current].has(item.categoryIds[state.current])) return;
           if (state.hideChecked[state.current] && item.checked) return;
+          if (_filter && !item.text.toLowerCase().includes(_filter)) return;
+        }
+        if (item.type === 'header') {
+          if (_filter && !_matchingHeaders.has(id)) return;
         }
         list.insertBefore(createRow(id), addRow);
       });
@@ -3146,8 +3188,11 @@
 
       btn.addEventListener('click', () => {
         if (btn.dataset.layout === state.current) return;
+        filterText[btn.dataset.layout] = '';
         state.current = btn.dataset.layout;
         save();
+        filterInput.value = '';
+        filterClearBtn.style.display = 'none';
         render();
       });
 
@@ -3193,6 +3238,31 @@
     });
 
     document.getElementById('api-settings-btn').addEventListener('click', openApiKeySettings);
+
+    // ── Filter bar ────────────────────────────────────────────────────────────
+
+    const filterInput    = document.getElementById('filter-input');
+    const filterClearBtn = document.getElementById('filter-clear-btn');
+
+    filterInput.addEventListener('input', () => {
+      filterText[state.current] = filterInput.value;
+      render();
+    });
+
+    filterInput.addEventListener('focus', () => {
+      filterClearBtn.style.display = 'none';
+    });
+
+    filterInput.addEventListener('blur', () => {
+      filterClearBtn.style.display = filterText[state.current] ? '' : 'none';
+    });
+
+    filterClearBtn.addEventListener('click', () => {
+      filterText[state.current] = '';
+      filterInput.value = '';
+      filterClearBtn.style.display = 'none';
+      render();
+    });
 
     // ── Scan bar (above list) ─────────────────────────────────────────────────
     const _scanFileInput = document.getElementById('scan-file-input');
