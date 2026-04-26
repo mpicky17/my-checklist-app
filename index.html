@@ -1043,7 +1043,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v101';
+    const APP_VERSION = 'my-checklist-v102';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1880,6 +1880,30 @@
       });
       menu.appendChild(addOpt);
 
+      const currentCatId = state.items[itemId].categoryIds?.[state.current];
+      if (currentCatId) {
+        const noCatOpt = document.createElement('div');
+        noCatOpt.className = 'category-menu-item no-cat';
+        noCatOpt.textContent = '- No category';
+        noCatOpt.addEventListener('mousedown', e => {
+          e.preventDefault();
+          menu.remove();
+          removeCategoryFromItem(itemId);
+        });
+        let _noCatTx = 0, _noCatTy = 0;
+        noCatOpt.addEventListener('touchstart', e => {
+          _noCatTx = e.touches[0].clientX; _noCatTy = e.touches[0].clientY;
+        }, { passive: true });
+        noCatOpt.addEventListener('touchend', e => {
+          const dx = e.changedTouches[0].clientX - _noCatTx;
+          const dy = e.changedTouches[0].clientY - _noCatTy;
+          if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+            e.preventDefault(); menu.remove(); removeCategoryFromItem(itemId);
+          }
+        });
+        menu.appendChild(noCatOpt);
+      }
+
       headers.forEach(hid => {
         const opt = document.createElement('div');
         opt.className = 'category-menu-item';
@@ -1943,6 +1967,25 @@
         insertAt = hIdx !== -1 ? hIdx : order.length - 1;
       }
       order.splice(insertAt + 1, 0, itemId);
+
+      save();
+      fbSyncItem(itemId);
+      fbSyncLayout(state.current, baseline);
+      render();
+    }
+
+    function removeCategoryFromItem(itemId) {
+      const order = state.layouts[state.current];
+      const baseline = [...order];
+
+      if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null, C: null };
+      state.items[itemId].categoryIds[state.current] = null;
+      state.items[itemId].updatedAt = Date.now();
+
+      // Move item to bottom of list
+      const fromIdx = order.indexOf(itemId);
+      if (fromIdx !== -1) order.splice(fromIdx, 1);
+      order.push(itemId);
 
       save();
       fbSyncItem(itemId);
