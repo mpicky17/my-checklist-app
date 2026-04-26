@@ -727,19 +727,21 @@
 
     /* ── Filter bar ──────────────────────────────────────────────────── */
     #filter-bar { display: flex; align-items: center; gap: 8px; padding: 0 0 10px; }
+    #filter-input-wrapper { position: relative; flex: 1; }
     #filter-input {
-      flex: 1; border: 1px solid #d1d5db; border-radius: 6px;
-      padding: 5px 10px; font-size: 0.875rem; color: #1a1a1a;
+      width: 100%; box-sizing: border-box;
+      border: 1px solid #d1d5db; border-radius: 6px;
+      padding: 5px 28px 5px 10px; font-size: 1rem; color: #1a1a1a;
       background: #fff; outline: none;
     }
     #filter-input:focus { border-color: #9ca3af; }
     #filter-clear-btn {
       display: none;
-      background: none; border: 1px solid #d1d5db; border-radius: 6px;
-      font-size: 0.75rem; padding: 4px 8px; cursor: pointer; color: #4b5563;
-      white-space: nowrap; flex-shrink: 0; touch-action: manipulation;
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; padding: 0; line-height: 1;
+      font-size: 1rem; cursor: pointer; color: #9ca3af; touch-action: manipulation;
     }
-    #filter-clear-btn:hover { background: #f3f4f6; }
+    #filter-clear-btn:hover { color: #4b5563; }
 
     .api-settings-btn {
       background: none; border: none; cursor: pointer; font-size: 0.85rem;
@@ -1032,14 +1034,16 @@
       <button id="compare-retailers-btn" class="receipt-scan-btn">🏪 Compare Retailers</button>
     </div>
     <div id="filter-bar">
-      <input type="text" id="filter-input" placeholder="Type to filter">
-      <button id="filter-clear-btn">Clear</button>
+      <div id="filter-input-wrapper">
+        <input type="text" id="filter-input" placeholder="Type to filter">
+        <button id="filter-clear-btn">&times;</button>
+      </div>
     </div>
 <div id="list"></div>
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v99';
+    const APP_VERSION = 'my-checklist-v100';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3246,21 +3250,15 @@
 
     filterInput.addEventListener('input', () => {
       filterText[state.current] = filterInput.value;
+      filterClearBtn.style.display = filterInput.value ? '' : 'none';
       render();
-    });
-
-    filterInput.addEventListener('focus', () => {
-      filterClearBtn.style.display = 'none';
-    });
-
-    filterInput.addEventListener('blur', () => {
-      filterClearBtn.style.display = filterText[state.current] ? '' : 'none';
     });
 
     filterClearBtn.addEventListener('click', () => {
       filterText[state.current] = '';
       filterInput.value = '';
       filterClearBtn.style.display = 'none';
+      filterInput.focus();
       render();
     });
 
