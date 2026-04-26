@@ -783,11 +783,11 @@
     .receipt-item-price  { font-size: 0.75rem; color: #6b7280; }
     .receipt-match-row   { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .receipt-match-select {
-      flex: 1; min-width: 0; font-size: 0.8rem; border: 1px solid #d1d5db;
+      flex: 1; min-width: 0; font-size: 1rem; border: 1px solid #d1d5db;
       border-radius: 6px; padding: 4px 6px; background: #fff; font-family: inherit;
     }
     .receipt-qty-input {
-      width: 56px; font-size: 0.9rem; border: 1px solid #d1d5db;
+      width: 56px; font-size: 1rem; border: 1px solid #d1d5db;
       border-radius: 6px; padding: 4px 6px; text-align: center;
       font-family: inherit; -moz-appearance: textfield;
     }
@@ -824,7 +824,7 @@
     }
     .api-key-dialog h3 { margin: 0; font-size: 1rem; }
     .api-key-input {
-      width: 100%; font-size: 0.85rem; border: 1px solid #d1d5db;
+      width: 100%; font-size: 1rem; border: 1px solid #d1d5db;
       border-radius: 6px; padding: 8px 10px; font-family: inherit; box-sizing: border-box;
     }
     .api-key-save-btn {
@@ -1051,7 +1051,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v103';
+    const APP_VERSION = 'my-checklist-v104';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2445,7 +2445,7 @@
       localStorage.setItem('receipt-cache', JSON.stringify(cache));
     }
 
-    function openApiKeySettings() {
+    function openApiKeySettings(onSaved) {
       const overlay = document.createElement('div');
       overlay.className = 'api-key-dialog-overlay';
       const dialog = document.createElement('div');
@@ -2463,6 +2463,7 @@
       dialog.querySelector('.api-key-save-btn').addEventListener('click', () => {
         saveApiKey(inp.value);
         overlay.remove();
+        if (onSaved) onSaved();
       });
       dialog.querySelector('.api-key-cancel-btn').addEventListener('click', () => overlay.remove());
       overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -2555,7 +2556,7 @@
 
     function openReceiptScanner(fileInput) {
       if (!getApiKey()) {
-        openApiKeySettings();
+        openApiKeySettings(() => fileInput.click());
         return;
       }
       fileInput.click();
@@ -2993,12 +2994,11 @@
             it.updatedAt = Date.now();
             setCacheEntry(item.item_code, selectedId, qty);
           } else {
-            // No qty — if fill item, set fill level to Full and turn oval green
-            if (it.qtyType === 'fill') {
-              it.qtyValue = 'Full';
-              it.updatedAt = Date.now();
-              fillOval.dataset.fill = 'Full'; // triggers green CSS (.qty-fill-oval[data-fill="Full"])
-            }
+            // No qty entered — treat as Full (fully stocked)
+            it.qtyType  = 'fill';
+            it.qtyValue = 'Full';
+            it.updatedAt = Date.now();
+            fillOval.dataset.fill = 'Full';
             setCacheEntry(item.item_code, selectedId, null);
           }
 
