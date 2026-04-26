@@ -1061,7 +1061,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v108';
+    const APP_VERSION = 'my-checklist-v109';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3598,16 +3598,42 @@
       let totalUsed = 0;
       for (const c of dailyConsumed) totalUsed += c;
 
+      function rollingAvg(windowDays) {
+        const cutoff = tMax - windowDays * msPerDay;
+        let consumed = 0;
+        for (let i = 0; i < dailyConsumed.length; i++) {
+          const start = timestamps[i];
+          const end   = timestamps[i + 1];
+          if (end <= cutoff) continue;
+          const periodLen = end - start;
+          if (periodLen === 0) continue;
+          const overlap = Math.min(end, tMax) - Math.max(start, cutoff);
+          if (overlap <= 0) continue;
+          consumed += dailyConsumed[i] * (overlap / periodLen);
+        }
+        return consumed / windowDays;
+      }
+
+      function fmt(n) { return Math.round(n * 100) / 100; }
+
       if (totalDays >= 7) {
         const perDay = totalUsed / totalDays;
         const s1 = document.createElement('span');
-        s1.textContent = '~' + (Math.round(perDay * 100) / 100) + ' used per day';
+        s1.textContent = '~' + fmt(perDay) + ' used per day';
         statsArea.appendChild(s1);
+        const s7 = document.createElement('span');
+        s7.textContent = '~' + fmt(rollingAvg(7)) + '/day (7-day avg)';
+        statsArea.appendChild(s7);
+      }
+      if (totalDays >= 30) {
+        const s30 = document.createElement('span');
+        s30.textContent = '~' + fmt(rollingAvg(30)) + '/day (30-day avg)';
+        statsArea.appendChild(s30);
       }
       if (totalDays >= 14) {
         const perWeek = (totalUsed / totalDays) * 7;
         const s2 = document.createElement('span');
-        s2.textContent = '~' + (Math.round(perWeek * 100) / 100) + ' used per week';
+        s2.textContent = '~' + fmt(perWeek) + ' used per week';
         statsArea.appendChild(s2);
       }
     }
