@@ -1051,7 +1051,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v104';
+    const APP_VERSION = 'my-checklist-v105';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1075,10 +1075,12 @@
     let filterText = { A: '', B: '', C: '' };
 
     // No-ops replaced by real implementations once Firebase is initialized
-    let fbSyncItem       = function() {};
-    let fbSyncLayout     = function() {};
-    let fbSyncMeta       = function() {};
-    let fbSyncQtyHistory = function() {};
+    let fbSyncItem         = function() {};
+    let fbSyncLayout       = function() {};
+    let fbSyncMeta         = function() {};
+    let fbSyncQtyHistory   = function() {};
+    let fbSyncReceiptCache = function() {};
+    let fbSyncApiKey       = function() {};
 
     const list = document.getElementById('list');
     let dragId = null;
@@ -2423,6 +2425,7 @@
     }
     function saveApiKey(key) {
       localStorage.setItem('receipt-api-key', key.trim());
+      fbSyncApiKey(key.trim());
     }
 
     function getReceiptCache() {
@@ -2443,6 +2446,7 @@
       cache[code] = { id: itemId, qty: qty != null ? qty : null };
       receiptItemCache = cache;
       localStorage.setItem('receipt-cache', JSON.stringify(cache));
+      fbSyncReceiptCache(cache);
     }
 
     function openApiKeySettings(onSaved) {
@@ -4399,6 +4403,23 @@
         if (histChanged) saveQtyHistory();
       }
 
+      // Receipt cache: additive merge — add any remote entries not already local
+      if (remote.receiptCache) {
+        const cache = getReceiptCache();
+        let cacheChanged = false;
+        Object.entries(remote.receiptCache).forEach(([code, entry]) => {
+          if (!cache[code]) { cache[code] = entry; cacheChanged = true; }
+        });
+        if (cacheChanged) {
+          receiptItemCache = cache;
+          localStorage.setItem('receipt-cache', JSON.stringify(cache));
+        }
+      }
+      // API key: restore from cloud only if not set locally
+      if (remote.receiptApiKey && !getApiKey()) {
+        localStorage.setItem('receipt-api-key', remote.receiptApiKey.trim());
+      }
+
       if (changed) {
         localStorage.setItem('checklist-v2', JSON.stringify(state));
         // Don't tear down the DOM while the user is typing — defer until blur.
@@ -4450,6 +4471,16 @@
       fbSyncQtyHistory = function(id, dateStr, val) {
         if (!fbUid) return;
         fbDb.ref('users/' + fbUid + '/checklist/qtyHistory/' + id + '/' + dateStr).set(val);
+      };
+      fbSyncReceiptCache = function(cache) {
+        if (!fbUid) return;
+        fbDb.ref('users/' + fbUid + '/checklist/receiptCache').set(cache)
+          .catch(() => {});
+      };
+      fbSyncApiKey = function(key) {
+        if (!fbUid) return;
+        fbDb.ref('users/' + fbUid + '/checklist/receiptApiKey').set(key)
+          .catch(() => {});
       };
 
       function startListener() {
@@ -4504,6 +4535,17 @@
                     qtyHistory[itemId] = Object.assign(qtyHistory[itemId] || {}, dates || {});
                   });
                   saveQtyHistory();
+                }
+                // Restore receipt cache from cloud
+                if (remote.receiptCache) {
+                  const cache = getReceiptCache();
+                  Object.assign(cache, remote.receiptCache);
+                  receiptItemCache = cache;
+                  localStorage.setItem('receipt-cache', JSON.stringify(cache));
+                }
+                // Restore API key from cloud if not set locally
+                if (remote.receiptApiKey && !getApiKey()) {
+                  localStorage.setItem('receipt-api-key', remote.receiptApiKey.trim());
                 }
                 render();
                 setSyncStatus('Restored from cloud', 'ok');
