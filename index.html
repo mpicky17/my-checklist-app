@@ -1051,7 +1051,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v106';
+    const APP_VERSION = 'my-checklist-v107';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -2242,7 +2242,7 @@
 
       const input = document.createElement('input');
       input.type      = 'number';
-      input.inputMode = 'numeric';
+      input.inputMode = 'decimal';
       input.min       = '0';
       input.className = 'qty-inline-input';
       if (item && item.qtyType === 'number' && item.qtyValue !== null) {
