@@ -1051,7 +1051,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v105';
+    const APP_VERSION = 'my-checklist-v106';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1155,6 +1155,7 @@
     // ── Qty History ───────────────────────────────────────────────────────────
 
     const FILL_TO_NUM = { Full: 1, Half: 0.5, Low: 0.25, Empty: 0 };
+    const NUM_TO_FILL = { 1: 'Full', 0: 'Empty' };
 
     let qtyHistory = {}; // { [itemId]: { [dateStr "YYYY-MM-DD"]: number } }
 
@@ -2078,7 +2079,7 @@
       cell.className = 'qty-cell';
       if (qtyType === 'number') {
         cell.classList.add('qty-type-number');
-        cell.textContent = (qtyValue === null || qtyValue === undefined) ? '' : String(qtyValue);
+        cell.textContent = (qtyValue === null || qtyValue === undefined) ? '' : String(parseFloat(qtyValue.toFixed(1)));
       } else if (qtyType === 'fill') {
         const oval = document.createElement('div');
         oval.className = 'qty-fill-oval';
@@ -2146,6 +2147,7 @@
       if (!item) return;
       item.qtyType  = type;
       item.qtyValue = value;
+      if (type === 'fill') item.qtyWasFill = false;
       item.updatedAt = Date.now();
       recordQtyHistory(id);
       save();
@@ -2261,7 +2263,9 @@
 
         const raw = (input.value || '').trim();
         if (raw !== '' && !isNaN(Number(raw))) {
-          const val = Math.max(0, Math.floor(Number(raw)));
+          const val = Math.max(0, parseFloat(Number(raw).toFixed(1)));
+          const it = state.items[id];
+          if (it && it.qtyType === 'fill') it.qtyWasFill = true;
           commitQtyValue(id, 'number', val, cell, plusBtn, minusBtn);
         } else {
           // No valid number — restore display without changing state
@@ -2353,7 +2357,15 @@
         const it = state.items[id];
         if (!it) return;
         if (it.qtyType === 'number') {
-          it.qtyValue = Math.max(0, (it.qtyValue || 0) - 1);
+          const cur  = it.qtyValue || 0;
+          const next = Number.isInteger(cur) ? Math.max(0, cur - 1) : Math.floor(cur);
+          if (it.qtyWasFill && NUM_TO_FILL.hasOwnProperty(next)) {
+            it.qtyType    = 'fill';
+            it.qtyValue   = NUM_TO_FILL[next];
+            it.qtyWasFill = false;
+          } else {
+            it.qtyValue = next;
+          }
         } else if (it.qtyType === 'fill') {
           const levels = ['Empty', 'Low', 'Half', 'Full'];
           const idx = levels.indexOf(it.qtyValue);
@@ -2992,7 +3004,10 @@
             // User entered a number — update qty (accumulate if already number, replace if fill)
             const qty = Math.max(1, Math.floor(Number(qtyStr) || 1));
             const prevType = it.qtyType;
-            const prevQty  = (prevType === 'number' && typeof it.qtyValue === 'number') ? it.qtyValue : 0;
+            const prevQty  = prevType === 'number' && typeof it.qtyValue === 'number'
+              ? it.qtyValue
+              : (prevType === 'fill' ? (FILL_TO_NUM[it.qtyValue] || 0) : 0);
+            if (prevType === 'fill') it.qtyWasFill = true;
             it.qtyType  = 'number';
             it.qtyValue = prevQty + qty;
             it.updatedAt = Date.now();
