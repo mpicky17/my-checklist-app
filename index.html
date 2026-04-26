@@ -395,7 +395,9 @@
       .category-menu                { background: #1c1c1e; border-color: #3a3a3c; }
       .category-menu-item           { color: #f2f2f7; }
       .category-menu-item:hover     { background: #2c2c2e; color: #818cf8; }
-      .category-menu-item.add-cat   { color: #818cf8; border-bottom-color: #3a3a3c; }
+      .category-menu-item.add-cat   { color: #818cf8; }
+      .category-menu-item.no-cat    { color: #818cf8; }
+      .category-menu-item.last-action { border-bottom-color: #3a3a3c; }
       .btn-del-only                 { background: #1c1c1e; color: #818cf8; border-color: #818cf8; }
       .btn-cancel                   { color: #636366; }
     }
@@ -493,6 +495,12 @@
     .category-menu-item.add-cat {
       color: #4f46e5;
       font-weight: 500;
+    }
+    .category-menu-item.no-cat {
+      color: #4f46e5;
+      font-weight: 500;
+    }
+    .category-menu-item.last-action {
       border-bottom: 1px solid #f0f0f0;
     }
 
@@ -1043,7 +1051,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v102';
+    const APP_VERSION = 'my-checklist-v103';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1881,9 +1889,10 @@
       menu.appendChild(addOpt);
 
       const currentCatId = state.items[itemId].categoryIds?.[state.current];
+      if (!currentCatId) addOpt.classList.add('last-action');
       if (currentCatId) {
         const noCatOpt = document.createElement('div');
-        noCatOpt.className = 'category-menu-item no-cat';
+        noCatOpt.className = 'category-menu-item no-cat last-action';
         noCatOpt.textContent = '- No category';
         noCatOpt.addEventListener('mousedown', e => {
           e.preventDefault();
