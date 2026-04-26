@@ -924,12 +924,22 @@
       display: flex; flex-direction: column; gap: 4px;
     }
     .usage-stats span { display: block; }
+    .usage-toggle { display: flex; gap: 0; }
+    .usage-toggle-btn {
+      flex: 1; padding: 4px 0; font-size: 1rem; border: 1px solid #d1d5db;
+      background: #fff; cursor: pointer; font-family: inherit; color: #6b7280;
+    }
+    .usage-toggle-btn:first-child { border-radius: 6px 0 0 6px; }
+    .usage-toggle-btn:last-child  { border-radius: 0 6px 6px 0; border-left: none; }
+    .usage-toggle-btn.active      { background: #4f46e5; color: #fff; border-color: #4f46e5; }
     @media (prefers-color-scheme: dark) {
       .usage-dialog-inner      { background: #1c1c1e; }
       .usage-dialog-title      { color: #f2f2f7; }
       .usage-item-select       { background: #2c2c2e; border-color: #3a3a3c; color: #f2f2f7; }
       .usage-no-data           { color: #8e8e93; }
       .usage-stats             { color: #e5e7eb; }
+      .usage-toggle-btn        { background: #2c2c2e; border-color: #3a3a3c; color: #8e8e93; }
+      .usage-toggle-btn.active { background: #818cf8; border-color: #818cf8; color: #1c1c1e; }
     }
 
     /* ── Price Check overlay ─────────────────────────────────────────────── */
@@ -1051,7 +1061,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v107';
+    const APP_VERSION = 'my-checklist-v108';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1175,16 +1185,20 @@
       return null;
     }
 
-    function recordQtyHistory(id) {
+    function recordQtyHistory(id, addedAmt = 0) {
       const item = state.items[id];
       if (!item) return;
       const val = qtyToNumber(item);
       if (val === null) return;
       const dateStr = new Date().toLocaleDateString('en-CA'); // "YYYY-MM-DD"
       if (!qtyHistory[id]) qtyHistory[id] = {};
-      qtyHistory[id][dateStr] = val;
+      const existing  = qtyHistory[id][dateStr];
+      const prevAdded = existing && typeof existing === 'object' ? (existing.added || 0) : 0;
+      const newAdded  = prevAdded + addedAmt;
+      const entry     = newAdded > 0 ? { v: val, added: newAdded } : val;
+      qtyHistory[id][dateStr] = entry;
       saveQtyHistory();
-      fbSyncQtyHistory(id, dateStr, val);
+      fbSyncQtyHistory(id, dateStr, entry);
     }
 
     // One-time seed: when this feature first runs, record today's qty for all
@@ -3000,18 +3014,20 @@
           if (!it) return;
 
           const qtyStr = qtyInput.value.trim();
+          const prevType = it.qtyType;
+          const prevQty  = prevType === 'number' && typeof it.qtyValue === 'number'
+            ? it.qtyValue
+            : (prevType === 'fill' ? (FILL_TO_NUM[it.qtyValue] || 0) : 0);
+          let addedAmt = 0;
           if (qtyStr !== '') {
             // User entered a number — update qty (accumulate if already number, replace if fill)
             const qty = Math.max(1, Math.floor(Number(qtyStr) || 1));
-            const prevType = it.qtyType;
-            const prevQty  = prevType === 'number' && typeof it.qtyValue === 'number'
-              ? it.qtyValue
-              : (prevType === 'fill' ? (FILL_TO_NUM[it.qtyValue] || 0) : 0);
             if (prevType === 'fill') it.qtyWasFill = true;
             it.qtyType  = 'number';
             it.qtyValue = prevQty + qty;
             it.updatedAt = Date.now();
             setCacheEntry(item.item_code, selectedId, qty);
+            addedAmt = qty;
           } else {
             // No qty entered — treat as Full (fully stocked)
             it.qtyType  = 'fill';
@@ -3019,9 +3035,10 @@
             it.updatedAt = Date.now();
             fillOval.dataset.fill = 'Full';
             setCacheEntry(item.item_code, selectedId, null);
+            addedAmt = Math.max(0, 1 - prevQty);
           }
 
-          recordQtyHistory(selectedId);
+          recordQtyHistory(selectedId, addedAmt);
           added.push(selectedId);
           card.style.opacity = '0.4';
           addBtn.disabled = true;
@@ -3378,8 +3395,30 @@
       const statsArea = document.createElement('div');
       statsArea.className = 'usage-stats';
 
+      // Toggle: Inventory / Usage
+      const toggle = document.createElement('div');
+      toggle.className = 'usage-toggle';
+      const invBtn = document.createElement('button');
+      invBtn.className = 'usage-toggle-btn active';
+      invBtn.textContent = 'Inventory';
+      const useBtn = document.createElement('button');
+      useBtn.className = 'usage-toggle-btn';
+      useBtn.textContent = 'Usage';
+      toggle.appendChild(invBtn);
+      toggle.appendChild(useBtn);
+
+      let chartMode = 'inventory';
+      function setMode(m) {
+        chartMode = m;
+        invBtn.classList.toggle('active', m === 'inventory');
+        useBtn.classList.toggle('active', m === 'usage');
+        renderUsageChart(sel.value, chartArea, statsArea, chartMode);
+      }
+      invBtn.addEventListener('click', () => setMode('inventory'));
+      useBtn.addEventListener('click', () => setMode('usage'));
+
       sel.addEventListener('change', () => {
-        renderUsageChart(sel.value, chartArea, statsArea);
+        renderUsageChart(sel.value, chartArea, statsArea, chartMode);
       });
 
       const doneBtn = document.createElement('button');
@@ -3389,6 +3428,7 @@
 
       inner.appendChild(title);
       inner.appendChild(sel);
+      inner.appendChild(toggle);
       inner.appendChild(chartArea);
       inner.appendChild(statsArea);
       inner.appendChild(doneBtn);
@@ -3396,7 +3436,7 @@
       document.body.appendChild(overlay);
     }
 
-    function renderUsageChart(id, chartArea, statsArea) {
+    function renderUsageChart(id, chartArea, statsArea, mode = 'inventory') {
       chartArea.innerHTML = '';
       statsArea.innerHTML = '';
       if (!id) return;
@@ -3413,13 +3453,21 @@
       }
 
       const dates  = rawEntries.map(e => e[0]);
-      const values = rawEntries.map(e => e[1]);
+      const values = rawEntries.map(e => typeof e[1] === 'number' ? e[1] : e[1].v);
+      const addeds  = rawEntries.map(e => typeof e[1] === 'number' ? 0 : (e[1].added || 0));
 
       // Detect fill type (all values in 0/0.25/0.5/1) vs number type
       const fillVals = new Set([0, 0.25, 0.5, 1]);
       const isFill = values.every(v => fillVals.has(v));
 
-      const maxVal = isFill ? 1 : Math.max(...values, 1);
+      // Compute daily consumption: prev_v + added - v (backward compat with plain-number entries)
+      const dailyConsumed = [];
+      for (let i = 1; i < values.length; i++) {
+        dailyConsumed.push(Math.max(0, values[i - 1] + addeds[i] - values[i]));
+      }
+      const maxConsumed = Math.max(...dailyConsumed, 0.001);
+
+      const maxVal = mode === 'usage' ? maxConsumed : (isFill ? 1 : Math.max(...values, 1));
 
       // Convert date strings to timestamps for linear X positioning
       const timestamps = dates.map(d => new Date(d + 'T00:00:00').getTime());
@@ -3474,7 +3522,12 @@
       svg.appendChild(makeLine(PAD_L, PAD_T + gH, PAD_L + gW, PAD_T + gH, axisColor, 1, null));
 
       // Y axis labels
-      if (isFill) {
+      if (mode === 'usage') {
+        const maxLabel = isFill ? maxConsumed.toFixed(2) : String(Math.ceil(maxConsumed));
+        svg.appendChild(makeText(PAD_L - 3, yOf(0) + 4, '0', 'end', 8, textColor));
+        svg.appendChild(makeText(PAD_L - 3, yOf(maxVal) + 4, maxLabel, 'end', 8, textColor));
+        svg.appendChild(makeLine(PAD_L, yOf(0), PAD_L + gW, yOf(0), dashColor, 0.5, '3 3'));
+      } else if (isFill) {
         [{ v: 1, label: 'Full' }, { v: 0.5, label: 'Half' }, { v: 0.25, label: 'Low' }, { v: 0, label: 'Empty' }].forEach(({ v, label }) => {
           const y = yOf(v);
           svg.appendChild(makeLine(PAD_L, y, PAD_L + gW, y, dashColor, 0.5, '3 3'));
@@ -3492,35 +3545,58 @@
       svg.appendChild(makeText(PAD_L, PAD_T + gH + 16, fmtDate(dates[0]), 'start', 8, textColor));
       svg.appendChild(makeText(PAD_L + gW, PAD_T + gH + 16, fmtDate(dates[dates.length - 1]), 'end', 8, textColor));
 
-      // Line connecting data points
-      const pts = timestamps.map((ts, i) => xOf(ts) + ',' + yOf(values[i])).join(' ');
-      const polyline = document.createElementNS(svgNS, 'polyline');
-      polyline.setAttribute('points', pts);
-      polyline.setAttribute('fill', 'none');
-      polyline.setAttribute('stroke', lineColor);
-      polyline.setAttribute('stroke-width', '2');
-      polyline.setAttribute('stroke-linejoin', 'round');
-      svg.appendChild(polyline);
+      if (mode === 'usage') {
+        // Bar chart for daily consumption
+        if (dailyConsumed.every(c => c === 0)) {
+          const msg = document.createElement('div');
+          msg.className = 'usage-no-data';
+          msg.textContent = 'No usage recorded yet — import a receipt to start tracking.';
+          chartArea.appendChild(msg);
+        } else {
+          const barW = Math.max(4, Math.min(20, (gW / dates.length) * 0.6));
+          dailyConsumed.forEach((c, idx) => {
+            if (c < 0.001) return;
+            const x = xOf(timestamps[idx + 1]);
+            const barH = (c / maxConsumed) * gH;
+            const rect = document.createElementNS(svgNS, 'rect');
+            rect.setAttribute('x', x - barW / 2);
+            rect.setAttribute('y', PAD_T + gH - barH);
+            rect.setAttribute('width', barW);
+            rect.setAttribute('height', barH);
+            rect.setAttribute('fill', lineColor);
+            rect.setAttribute('rx', '2');
+            svg.appendChild(rect);
+          });
+          chartArea.appendChild(svg);
+        }
+      } else {
+        // Inventory mode: line chart
+        const pts = timestamps.map((ts, i) => xOf(ts) + ',' + yOf(values[i])).join(' ');
+        const polyline = document.createElementNS(svgNS, 'polyline');
+        polyline.setAttribute('points', pts);
+        polyline.setAttribute('fill', 'none');
+        polyline.setAttribute('stroke', lineColor);
+        polyline.setAttribute('stroke-width', '2');
+        polyline.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(polyline);
 
-      // Dots at each data point
-      timestamps.forEach((ts, i) => {
-        const circle = document.createElementNS(svgNS, 'circle');
-        circle.setAttribute('cx', xOf(ts));
-        circle.setAttribute('cy', yOf(values[i]));
-        circle.setAttribute('r', '3');
-        circle.setAttribute('fill', dotColor);
-        svg.appendChild(circle);
-      });
+        timestamps.forEach((ts, i) => {
+          const circle = document.createElementNS(svgNS, 'circle');
+          circle.setAttribute('cx', xOf(ts));
+          circle.setAttribute('cy', yOf(values[i]));
+          circle.setAttribute('r', '3');
+          circle.setAttribute('fill', dotColor);
+          svg.appendChild(circle);
+        });
 
-      chartArea.appendChild(svg);
+        chartArea.appendChild(svg);
+      }
 
       // ── Usage rate stats ──────────────────────────────────────────────────
       const msPerDay = 86400000;
       const totalDays = (tMax - tMin) / msPerDay;
       let totalUsed = 0;
-      for (let i = 1; i < values.length; i++) {
-        if (values[i] < values[i - 1]) totalUsed += values[i - 1] - values[i];
-      }
+      for (const c of dailyConsumed) totalUsed += c;
 
       if (totalDays >= 7) {
         const perDay = totalUsed / totalDays;
