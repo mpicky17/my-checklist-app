@@ -398,6 +398,7 @@
       .category-menu-item.add-cat   { color: #818cf8; }
       .category-menu-item.no-cat    { color: #818cf8; }
       .category-menu-item.last-action { border-bottom-color: #3a3a3c; }
+      .category-menu-item.duplicate   { color: #c4b5fd; border-bottom-color: #3a3a3c; }
       .btn-del-only                 { background: #1c1c1e; color: #818cf8; border-color: #818cf8; }
       .btn-cancel                   { color: #636366; }
     }
@@ -503,6 +504,12 @@
     .category-menu-item.last-action {
       border-bottom: 1px solid #f0f0f0;
     }
+    .category-menu-item.duplicate {
+      color: #7c3aed;
+      font-weight: 500;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .category-menu-item.duplicate:hover { background: #f5f3ff; color: #5b21b6; }
 
     .add-category-btn {
       background: none;
@@ -995,6 +1002,31 @@
       .waste-dialog-cancel  { background: #2c2c2e; color: #f2f2f7; }
     }
 
+    /* ── Duplicate delete dialog ─────────────────────────────────────────── */
+    .dup-delete-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      z-index: 700; display: flex; align-items: center; justify-content: center;
+    }
+    .dup-delete-dialog {
+      background: #fff; border-radius: 12px; padding: 16px;
+      width: calc(100% - 32px); max-width: 300px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .dup-delete-dialog p { font-size: 0.875rem; color: #6b7280; margin: 0; }
+    .dup-delete-btn-remove, .dup-delete-btn-all, .dup-delete-btn-cancel {
+      padding: 10px; border-radius: 8px; border: none;
+      font-size: 1rem; cursor: pointer; font-family: inherit; font-weight: 500;
+    }
+    .dup-delete-btn-remove { background: #f3f4f6; color: #374151; }
+    .dup-delete-btn-all    { background: #ef4444; color: #fff; font-weight: 600; }
+    .dup-delete-btn-cancel { background: transparent; color: #9ca3af; }
+    @media (prefers-color-scheme: dark) {
+      .dup-delete-dialog        { background: #1c1c1e; }
+      .dup-delete-dialog p      { color: #8e8e93; }
+      .dup-delete-btn-remove    { background: #2c2c2e; color: #f2f2f7; }
+      .dup-delete-btn-cancel    { color: #636366; }
+    }
+
     /* ── Price Check overlay ─────────────────────────────────────────────── */
     .price-check-search-btn {
       background: #4f46e5; color: #fff; border: none; border-radius: 8px;
@@ -1114,7 +1146,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v110';
+    const APP_VERSION = 'my-checklist-v111';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1144,6 +1176,31 @@
     let fbSyncQtyHistory   = function() {};
     let fbSyncReceiptCache = function() {};
     let fbSyncApiKey       = function() {};
+    let fbSyncSlotMap      = function() {};
+
+    // ── Slot model helpers (v111) ─────────────────────────────────────────────
+    // A "slot key" is an entry in state.layouts[layout].
+    // For original items: slotKey === itemId (backward compat).
+    // For duplicates:     slotKey is a generated key stored in state.slotMaps[layout].
+
+    function resolveSlot(slotKey, layout) {
+      const slot = state.slotMaps?.[layout]?.[slotKey];
+      if (slot) return { itemId: slot.itemId, catId: slot.catId, isSlot: true };
+      const item = state.items[slotKey];
+      return { itemId: slotKey, catId: item?.categoryIds?.[layout] ?? null, isSlot: false };
+    }
+
+    function getSlotKeysForItem(itemId, layout) {
+      return Object.entries(state.slotMaps?.[layout] || {})
+        .filter(([, v]) => v.itemId === itemId)
+        .map(([k]) => k);
+    }
+
+    function rowIsDuplicated(slotKey, layout) {
+      const { itemId, isSlot } = resolveSlot(slotKey, layout);
+      if (isSlot) return true;
+      return getSlotKeysForItem(itemId, layout).length > 0;
+    }
 
     const list = document.getElementById('list');
     let dragId = null;
@@ -1198,6 +1255,7 @@
           if (!state.items[id].hasOwnProperty('qtyType'))  state.items[id].qtyType  = null;
           if (!state.items[id].hasOwnProperty('qtyValue')) state.items[id].qtyValue = null;
         });
+        if (!state.slotMaps) state.slotMaps = { A: {}, B: {}, C: {} };
         lastSyncedLayoutOrder = { A: [...state.layouts.A], B: [...state.layouts.B], C: [...(state.layouts.C || [])] };
       } else {
         // Migrate from old format if present
@@ -1299,39 +1357,43 @@
       const _filter = filterText[state.current].toLowerCase().trim();
       const _matchingHeaders = new Set();
       if (_filter) {
-        state.layouts[state.current].forEach(id => {
-          const it = state.items[id];
+        state.layouts[state.current].forEach(slotKey => {
+          const { itemId, catId } = resolveSlot(slotKey, state.current);
+          const it = state.items[itemId];
           if (!it || it.deleted || it.type !== 'item') return;
           if (state.hideChecked[state.current] && it.checked) return;
           if (it.text.toLowerCase().includes(_filter)) {
-            const catId = it.categoryIds?.[state.current];
             if (catId) _matchingHeaders.add(catId);
           }
         });
       }
 
-      state.layouts[state.current].forEach(id => {
-        if (!state.items[id]) return;
-        const item = state.items[id];
+      state.layouts[state.current].forEach(slotKey => {
+        const { itemId, catId } = resolveSlot(slotKey, state.current);
+        const item = state.items[itemId];
+        if (!item) return;
         if (item.deleted) return;
         if (item.type === 'item') {
-          if (item.categoryIds?.[state.current] && collapsedHeaders[state.current].has(item.categoryIds[state.current])) return;
+          if (catId && collapsedHeaders[state.current].has(catId)) return;
           if (state.hideChecked[state.current] && item.checked) return;
           if (_filter && !item.text.toLowerCase().includes(_filter)) return;
         }
         if (item.type === 'header') {
-          if (_filter && !_matchingHeaders.has(id)) return;
+          if (_filter && !_matchingHeaders.has(slotKey)) return;
         }
-        list.insertBefore(createRow(id), addRow);
+        list.insertBefore(createRow(slotKey), addRow);
       });
       list.querySelectorAll('.row:not(.add-row) textarea').forEach(autoResizeTextarea);
     }
 
-    function createRow(id) {
-      const item = state.items[id];
+    function createRow(slotKey) {
+      const { itemId, catId: slotCatId, isSlot } = resolveSlot(slotKey, state.current);
+      const id = itemId; // alias — item operations use itemId
+      const item = state.items[itemId];
       const isHeader = item.type === 'header';
       const row = document.createElement('div');
-      row.dataset.id = id;
+      row.dataset.id = slotKey;   // unique per row (for order operations)
+      row.dataset.itemId = itemId; // actual item (for text/checkbox/qty operations)
 
       // Drag handle (same for headers and items)
       const handle = document.createElement('span');
@@ -1428,7 +1490,7 @@
       input.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          setTimeout(() => insertRowAfter(id), 0);
+          setTimeout(() => insertRowAfter(slotKey), 0);
         }
       });
       input.addEventListener('blur', () => {
@@ -1468,6 +1530,8 @@
           } else {
             showDeleteCategoryDialog(id);
           }
+        } else if (rowIsDuplicated(slotKey, state.current)) {
+          showDuplicateDeleteDialog(slotKey, itemId);
         } else {
           state.items[id].deleted = true;
           state.items[id].updatedAt = Date.now();
@@ -1480,7 +1544,7 @@
       // ── Drag events ───────────────────────────────────────────────────────
 
       handle.addEventListener('dragstart', e => {
-        dragId = id;
+        dragId = slotKey;
         e.dataTransfer.effectAllowed = 'move';
         setTimeout(() => row.classList.add('dragging'), 0);
       });
@@ -1493,28 +1557,28 @@
 
       row.addEventListener('dragover', e => {
         e.preventDefault();
-        if (!dragId || dragId === id) return;
-        if (isInDraggedGroup(id)) return;
+        if (!dragId || dragId === slotKey) return;
+        if (isInDraggedGroup(slotKey)) return;
         const after = isCursorAfterMidpoint(e, row);
-        if (isInvalidHeaderDrop(dragId, row, id, after)) return;
+        if (isInvalidHeaderDrop(dragId, row, slotKey, after)) return;
         e.dataTransfer.dropEffect = 'move';
         showDropIndicator(row, after);
       });
 
       row.addEventListener('drop', e => {
         e.preventDefault();
-        if (!dragId || dragId === id) return;
-        if (isInDraggedGroup(id)) return;
+        if (!dragId || dragId === slotKey) return;
+        if (isInDraggedGroup(slotKey)) return;
         const after = isCursorAfterMidpoint(e, row);
-        if (isInvalidHeaderDrop(dragId, row, id, after)) return;
-        reorder(dragId, id, after);
+        if (isInvalidHeaderDrop(dragId, row, slotKey, after)) return;
+        reorder(dragId, slotKey, after);
       });
 
       // ── Touch drag events (iOS Safari) ────────────────────────────────────
 
       handle.addEventListener('touchstart', e => {
         e.preventDefault();
-        touchDragId = id;
+        touchDragId = slotKey;
         touchDragRow = row;
         row.classList.add('dragging');
 
@@ -1523,7 +1587,7 @@
 
         touchGhost = document.createElement('div');
         touchGhost.className = 'touch-ghost';
-        touchGhost.textContent = state.items[id].text || (isHeader ? '(category)' : '…');
+        touchGhost.textContent = item.text || (isHeader ? '(category)' : '…');
         touchGhost.style.width = rect.width + 'px';
         touchGhost.style.top = (touch.clientY - rect.height / 2) + 'px';
         touchGhost.style.left = rect.left + 'px';
@@ -1546,7 +1610,8 @@
         const targetRow = el && el.closest('.row:not(.add-row):not(.dragging)');
         const targetAddRow = el && el.closest('.add-row');
 
-        const touchFromItem = state.items[touchDragId];
+        const { itemId: touchFromItemId } = resolveSlot(touchDragId, state.current);
+        const touchFromItem = state.items[touchFromItemId];
         const touchGroupIds = (touchFromItem && touchFromItem.type === 'header')
           ? getCategoryItems(state.current, touchDragId, true) : [];
 
@@ -1581,7 +1646,8 @@
         const targetRow = el && el.closest('.row:not(.add-row)');
         const targetAddRow = el && el.closest('.add-row');
 
-        const touchEndFromItem = state.items[fromId];
+        const { itemId: touchEndItemId } = resolveSlot(fromId, state.current);
+        const touchEndFromItem = state.items[touchEndItemId];
         const touchEndGroupIds = (touchEndFromItem && touchEndFromItem.type === 'header')
           ? getCategoryItems(state.current, fromId, true) : [];
 
@@ -1597,7 +1663,8 @@
         } else if (targetAddRow) {
           const order = state.layouts[state.current];
           const baseline = [...order];
-          const fromItem = state.items[fromId];
+          const fromItem = touchEndFromItem;
+          const { isSlot: fromIsSlot } = resolveSlot(fromId, state.current);
           if (fromItem && fromItem.type === 'header') {
             const group = [fromId, ...getCategoryItems(state.current, fromId, true)];
             group.forEach(gid => {
@@ -1611,21 +1678,28 @@
               order.splice(fromIdx, 1);
               order.push(fromId);
             }
-            // Update categoryId based on what's now immediately above the dropped item
+            // Update category based on what's now immediately above the dropped item
             const newIdx2 = order.indexOf(fromId);
             let newCat = null;
             for (let i = newIdx2 - 1; i >= 0; i--) {
-              const pid = order[i];
-              const pitem = state.items[pid];
+              const { catId: pCatId } = resolveSlot(order[i], state.current);
+              const pitem = state.items[resolveSlot(order[i], state.current).itemId];
               if (!pitem || pitem.deleted) continue;
-              newCat = pitem.type === 'header' ? pid : (pitem.categoryIds?.[state.current] || null);
+              newCat = pitem.type === 'header' ? order[i] : pCatId;
               break;
             }
-            if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null, C: null };
-            if (state.items[fromId].categoryIds[state.current] !== newCat) {
-              state.items[fromId].categoryIds[state.current] = newCat;
-              state.items[fromId].updatedAt = Date.now();
-              fbSyncItem(fromId);
+            if (fromIsSlot) {
+              if (state.slotMaps[state.current][fromId].catId !== newCat) {
+                state.slotMaps[state.current][fromId].catId = newCat;
+                fbSyncSlotMap(state.current);
+              }
+            } else {
+              if (!state.items[touchEndItemId].categoryIds) state.items[touchEndItemId].categoryIds = { A: null, B: null, C: null };
+              if (state.items[touchEndItemId].categoryIds[state.current] !== newCat) {
+                state.items[touchEndItemId].categoryIds[state.current] = newCat;
+                state.items[touchEndItemId].updatedAt = Date.now();
+                fbSyncItem(touchEndItemId);
+              }
             }
           }
           save();
@@ -1651,7 +1725,7 @@
         catBtn.textContent = '⤷';
 
         // Purple + always-visible when this item has been explicitly assigned to a category
-        if (item.categoryIds?.[state.current]) catBtn.classList.add('in-category');
+        if (slotCatId) catBtn.classList.add('in-category');
 
         catBtn.addEventListener('pointerdown', e => e.stopPropagation());
         function applyCatBtn() {
@@ -1660,9 +1734,9 @@
             return h && !h.deleted && h.type === 'header';
           });
           if (headers.length === 0) {
-            commitAddHeader(id);
+            commitAddHeader(slotKey);
           } else {
-            showCategoryMenu(id, catBtn);
+            showCategoryMenu(slotKey, catBtn);
           }
         }
         let _catTouchX = 0, _catTouchY = 0;
@@ -1744,9 +1818,10 @@
         if (!dragId) return;
         const order = state.layouts[state.current];
         const baseline = [...order];
-        const fromItem = state.items[dragId];
+        const { itemId: dragItemId, isSlot: dragIsSlot } = resolveSlot(dragId, state.current);
+        const fromItem = state.items[dragItemId];
         if (fromItem && fromItem.type === 'header') {
-          const group = [dragId, ...getCategoryItems(state.current, dragId, true)];
+          const group = [dragId, ...getCategoryItems(state.current, dragItemId, true)];
           group.forEach(gid => {
             const idx = order.indexOf(gid);
             if (idx !== -1) order.splice(idx, 1);
@@ -1757,6 +1832,20 @@
           if (fromIdx === -1) return;
           order.splice(fromIdx, 1);
           order.push(dragId);
+          // Update category to null (dropped at bottom, no category)
+          if (dragIsSlot) {
+            if (state.slotMaps[state.current][dragId].catId !== null) {
+              state.slotMaps[state.current][dragId].catId = null;
+              fbSyncSlotMap(state.current);
+            }
+          } else {
+            if (!state.items[dragItemId].categoryIds) state.items[dragItemId].categoryIds = { A: null, B: null, C: null };
+            if (state.items[dragItemId].categoryIds[state.current] !== null) {
+              state.items[dragItemId].categoryIds[state.current] = null;
+              state.items[dragItemId].updatedAt = Date.now();
+              fbSyncItem(dragItemId);
+            }
+          }
         }
         save();
         fbSyncLayout(state.current, baseline);
@@ -1769,19 +1858,20 @@
       return row;
     }
 
-    function insertRowAfter(afterId) {
+    function insertRowAfter(afterSlotKey) {
       const id = genId();
-      const afterItem = state.items[afterId];
+      const { itemId: afterItemId, catId: afterCatId } = resolveSlot(afterSlotKey, state.current);
+      const afterItem = state.items[afterItemId];
       const newCategoryIds = { A: null, B: null, C: null };
       if (afterItem) {
         newCategoryIds[state.current] = afterItem.type === 'header'
-          ? afterId
-          : ((afterItem.categoryIds && afterItem.categoryIds[state.current]) || null);
+          ? afterItemId
+          : (afterCatId || null);
       }
       state.items[id] = { type: 'item', text: '', checked: false, updatedAt: Date.now(), deleted: false, categoryIds: newCategoryIds, qtyType: null, qtyValue: null };
 
       const current = state.layouts[state.current];
-      current.splice(current.indexOf(afterId) + 1, 0, id);
+      current.splice(current.indexOf(afterSlotKey) + 1, 0, id);
 
       const others = Object.keys(state.layouts).filter(l => l !== state.current);
       others.forEach(l => state.layouts[l].push(id));
@@ -1791,7 +1881,7 @@
       fbSyncLayout(state.current);
       others.forEach(l => fbSyncLayout(l));
 
-      const afterRow = list.querySelector(`.row[data-id="${afterId}"]`);
+      const afterRow = list.querySelector(`.row[data-id="${afterSlotKey}"]`);
       const newRow = createRow(id);
       newRow.dataset.new = '1';
       afterRow.after(newRow);
@@ -1846,10 +1936,11 @@
       collapseAllBtn.className = 'add-category-btn';
       collapseAllBtn.textContent = '- Collapse all';
       collapseAllBtn.addEventListener('click', () => {
-        state.layouts[state.current].forEach(id => {
-          const item = state.items[id];
+        state.layouts[state.current].forEach(sk => {
+          const { itemId: skItemId } = resolveSlot(sk, state.current);
+          const item = state.items[skItemId];
           if (item && !item.deleted && item.type === 'header') {
-            collapsedHeaders[state.current].add(id);
+            collapsedHeaders[state.current].add(skItemId);
           }
         });
         render();
@@ -1894,28 +1985,33 @@
     // in layout order. Pass includeDeleted=true to include tombstoned items (e.g. for drag group-move).
     function getCategoryItems(layoutId, headerId, includeDeleted) {
       const order = state.layouts[layoutId];
-      return order.filter(sid => {
-        const sitem = state.items[sid];
+      return order.filter(slotKey => {
+        const { itemId, catId } = resolveSlot(slotKey, layoutId);
+        const sitem = state.items[itemId];
         if (!sitem || sitem.type !== 'item') return false;
-        if (!sitem.categoryIds || sitem.categoryIds[layoutId] !== headerId) return false;
+        if (catId !== headerId) return false;
         if (!includeDeleted && sitem.deleted) return false;
         return true;
       });
     }
 
-    function commitAddHeader(insertBeforeId) {
+    function commitAddHeader(insertBeforeSlotKey) {
       const id = genId();
       state.items[id] = { type: 'header', text: '', updatedAt: Date.now(), deleted: false };
       const order = state.layouts[state.current];
-      if (insertBeforeId) {
-        const idx = order.indexOf(insertBeforeId);
+      if (insertBeforeSlotKey) {
+        const idx = order.indexOf(insertBeforeSlotKey);
         order.splice(idx !== -1 ? idx : 0, 0, id);
         // Auto-assign the item that triggered this header creation to the new category
-        if (state.items[insertBeforeId]) {
-          if (!state.items[insertBeforeId].categoryIds) state.items[insertBeforeId].categoryIds = { A: null, B: null, C: null };
-          state.items[insertBeforeId].categoryIds[state.current] = id;
-          state.items[insertBeforeId].updatedAt = Date.now();
-          fbSyncItem(insertBeforeId);
+        const { itemId: triggerItemId, isSlot: triggerIsSlot } = resolveSlot(insertBeforeSlotKey, state.current);
+        if (triggerIsSlot) {
+          state.slotMaps[state.current][insertBeforeSlotKey].catId = id;
+          fbSyncSlotMap(state.current);
+        } else if (state.items[triggerItemId]) {
+          if (!state.items[triggerItemId].categoryIds) state.items[triggerItemId].categoryIds = { A: null, B: null, C: null };
+          state.items[triggerItemId].categoryIds[state.current] = id;
+          state.items[triggerItemId].updatedAt = Date.now();
+          fbSyncItem(triggerItemId);
         }
       } else {
         order.unshift(id);
@@ -1932,10 +2028,12 @@
       }
     }
 
-    function showCategoryMenu(itemId, btnEl) {
+    function showCategoryMenu(slotKey, btnEl) {
       // Remove any existing menu
       const existing = document.querySelector('.category-menu');
       if (existing) existing.remove();
+
+      const { itemId, catId: currentCatId } = resolveSlot(slotKey, state.current);
 
       const order = state.layouts[state.current];
       const headers = order.filter(hid => {
@@ -1952,7 +2050,7 @@
       addOpt.addEventListener('mousedown', e => {
         e.preventDefault();
         menu.remove();
-        commitAddHeader(itemId);
+        commitAddHeader(slotKey);
       });
       let _addOptTx = 0, _addOptTy = 0;
       addOpt.addEventListener('touchstart', e => {
@@ -1962,12 +2060,11 @@
         const dx = e.changedTouches[0].clientX - _addOptTx;
         const dy = e.changedTouches[0].clientY - _addOptTy;
         if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
-          e.preventDefault(); menu.remove(); commitAddHeader(itemId);
+          e.preventDefault(); menu.remove(); commitAddHeader(slotKey);
         }
       });
       menu.appendChild(addOpt);
 
-      const currentCatId = state.items[itemId].categoryIds?.[state.current];
       if (!currentCatId) addOpt.classList.add('last-action');
       if (currentCatId) {
         const noCatOpt = document.createElement('div');
@@ -1976,7 +2073,7 @@
         noCatOpt.addEventListener('mousedown', e => {
           e.preventDefault();
           menu.remove();
-          removeCategoryFromItem(itemId);
+          removeCategoryFromItem(slotKey);
         });
         let _noCatTx = 0, _noCatTy = 0;
         noCatOpt.addEventListener('touchstart', e => {
@@ -1986,11 +2083,33 @@
           const dx = e.changedTouches[0].clientX - _noCatTx;
           const dy = e.changedTouches[0].clientY - _noCatTy;
           if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
-            e.preventDefault(); menu.remove(); removeCategoryFromItem(itemId);
+            e.preventDefault(); menu.remove(); removeCategoryFromItem(slotKey);
           }
         });
         menu.appendChild(noCatOpt);
       }
+
+      // "Duplicate item" option (purple)
+      const dupOpt = document.createElement('div');
+      dupOpt.className = 'category-menu-item duplicate';
+      dupOpt.textContent = 'Duplicate item';
+      dupOpt.addEventListener('mousedown', e => {
+        e.preventDefault();
+        menu.remove();
+        duplicateItem(slotKey);
+      });
+      let _dupTx = 0, _dupTy = 0;
+      dupOpt.addEventListener('touchstart', e => {
+        _dupTx = e.touches[0].clientX; _dupTy = e.touches[0].clientY;
+      }, { passive: true });
+      dupOpt.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - _dupTx;
+        const dy = e.changedTouches[0].clientY - _dupTy;
+        if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
+          e.preventDefault(); menu.remove(); duplicateItem(slotKey);
+        }
+      });
+      menu.appendChild(dupOpt);
 
       headers.forEach(hid => {
         const opt = document.createElement('div');
@@ -1999,7 +2118,7 @@
         opt.addEventListener('mousedown', e => {
           e.preventDefault();
           menu.remove();
-          moveToCategory(itemId, hid);
+          moveToCategory(slotKey, hid);
         });
         let _optTx = 0, _optTy = 0;
         opt.addEventListener('touchstart', e => {
@@ -2009,14 +2128,14 @@
           const dx = e.changedTouches[0].clientX - _optTx;
           const dy = e.changedTouches[0].clientY - _optTy;
           if (Math.hypot(dx, dy) < SCROLL_TAP_THRESHOLD) {
-            e.preventDefault(); menu.remove(); moveToCategory(itemId, hid);
+            e.preventDefault(); menu.remove(); moveToCategory(slotKey, hid);
           }
         });
         menu.appendChild(opt);
       });
 
-      // Position menu relative to the item's row
-      const row = list.querySelector(`.row[data-id="${itemId}"]`);
+      // Position menu relative to the item's row (use btnEl.closest for correct row with duplicates)
+      const row = btnEl.closest('.row');
       row.style.position = 'relative';
       row.appendChild(menu);
 
@@ -2030,53 +2149,154 @@
       }, 0);
     }
 
-    function moveToCategory(itemId, headerId) {
+    function duplicateItem(slotKey) {
+      const { itemId, catId } = resolveSlot(slotKey, state.current);
+      const order = state.layouts[state.current];
+      const baseline = [...order];
+      const newSlotKey = '_slot' + genId();
+      if (!state.slotMaps) state.slotMaps = { A: {}, B: {}, C: {} };
+      if (!state.slotMaps[state.current]) state.slotMaps[state.current] = {};
+      state.slotMaps[state.current][newSlotKey] = { itemId, catId };
+      const idx = order.indexOf(slotKey);
+      order.splice(idx + 1, 0, newSlotKey);
+      save();
+      fbSyncLayout(state.current, baseline);
+      fbSyncSlotMap(state.current);
+      render();
+    }
+
+    function showDuplicateDeleteDialog(slotKey, itemId) {
+      const { isSlot } = resolveSlot(slotKey, state.current);
+
+      const overlay = document.createElement('div');
+      overlay.className = 'dup-delete-overlay';
+
+      const dialog = document.createElement('div');
+      dialog.className = 'dup-delete-dialog';
+
+      const title = document.createElement('p');
+      title.textContent = 'This item appears more than once in this layout.';
+      dialog.appendChild(title);
+
+      const btnRemove = document.createElement('button');
+      btnRemove.className = 'dup-delete-btn-remove';
+      btnRemove.textContent = 'Remove from layout';
+      btnRemove.addEventListener('click', () => {
+        overlay.remove();
+        const layout = state.current;
+        const order = state.layouts[layout];
+        const baseline = [...order];
+        const idx = order.indexOf(slotKey);
+        if (idx !== -1) order.splice(idx, 1);
+        if (isSlot) {
+          if (state.slotMaps?.[layout]) delete state.slotMaps[layout][slotKey];
+        }
+        save();
+        fbSyncLayout(layout, baseline);
+        fbSyncSlotMap(layout);
+        render();
+      });
+
+      const btnDeleteAll = document.createElement('button');
+      btnDeleteAll.className = 'dup-delete-btn-all';
+      btnDeleteAll.textContent = 'Delete item from all layouts';
+      btnDeleteAll.addEventListener('click', () => {
+        overlay.remove();
+        state.items[itemId].deleted = true;
+        state.items[itemId].updatedAt = Date.now();
+        ['A', 'B', 'C'].forEach(l => {
+          const ord = state.layouts[l];
+          // Remove original entry
+          const origIdx = ord.indexOf(itemId);
+          if (origIdx !== -1) ord.splice(origIdx, 1);
+          // Remove any slot entries pointing to this item
+          const slots = getSlotKeysForItem(itemId, l);
+          slots.forEach(sk => {
+            const si = ord.indexOf(sk);
+            if (si !== -1) ord.splice(si, 1);
+            if (state.slotMaps?.[l]) delete state.slotMaps[l][sk];
+          });
+        });
+        save();
+        fbSyncItem(itemId);
+        ['A', 'B', 'C'].forEach(l => { fbSyncLayout(l); fbSyncSlotMap(l); });
+        render();
+      });
+
+      const btnCancel = document.createElement('button');
+      btnCancel.className = 'dup-delete-btn-cancel';
+      btnCancel.textContent = 'Cancel';
+      btnCancel.addEventListener('click', () => overlay.remove());
+
+      dialog.appendChild(btnRemove);
+      dialog.appendChild(btnDeleteAll);
+      dialog.appendChild(btnCancel);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    }
+
+    function moveToCategory(slotKey, headerId) {
+      const { itemId, isSlot } = resolveSlot(slotKey, state.current);
       const order = state.layouts[state.current];
       const baseline = [...order];
 
-      // Explicitly assign item to this category (per-layout)
-      if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null, C: null };
-      state.items[itemId].categoryIds[state.current] = headerId;
-      state.items[itemId].updatedAt = Date.now();
+      if (isSlot) {
+        // Write category override to slotMap
+        state.slotMaps[state.current][slotKey].catId = headerId;
+      } else {
+        // Write to item's own categoryIds
+        if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null, C: null };
+        state.items[itemId].categoryIds[state.current] = headerId;
+        state.items[itemId].updatedAt = Date.now();
+        fbSyncItem(itemId);
+      }
 
-      // Remove item from current position
-      const fromIdx = order.indexOf(itemId);
+      // Remove slot from current position
+      const fromIdx = order.indexOf(slotKey);
       if (fromIdx !== -1) order.splice(fromIdx, 1);
 
-      // Insert after the last item already in this category (by categoryId), in layout order
+      // Insert after the last entry already in this category, in layout order
       let insertAt = -1;
       for (let i = 0; i < order.length; i++) {
-        const iitem = state.items[order[i]];
-        if (iitem && !iitem.deleted && iitem.categoryIds?.[state.current] === headerId) insertAt = i;
+        const { catId: entCatId } = resolveSlot(order[i], state.current);
+        if (entCatId === headerId) insertAt = i;
       }
       if (insertAt === -1) {
         // No other items in category yet — insert right after the header
         const hIdx = order.indexOf(headerId);
         insertAt = hIdx !== -1 ? hIdx : order.length - 1;
       }
-      order.splice(insertAt + 1, 0, itemId);
+      order.splice(insertAt + 1, 0, slotKey);
 
       save();
-      fbSyncItem(itemId);
+      if (isSlot) fbSyncSlotMap(state.current);
       fbSyncLayout(state.current, baseline);
       render();
     }
 
-    function removeCategoryFromItem(itemId) {
+    function removeCategoryFromItem(slotKey) {
+      const { itemId, isSlot } = resolveSlot(slotKey, state.current);
       const order = state.layouts[state.current];
       const baseline = [...order];
 
-      if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null, C: null };
-      state.items[itemId].categoryIds[state.current] = null;
-      state.items[itemId].updatedAt = Date.now();
+      if (isSlot) {
+        state.slotMaps[state.current][slotKey].catId = null;
+      } else {
+        if (!state.items[itemId].categoryIds) state.items[itemId].categoryIds = { A: null, B: null, C: null };
+        state.items[itemId].categoryIds[state.current] = null;
+        state.items[itemId].updatedAt = Date.now();
+        fbSyncItem(itemId);
+      }
 
-      // Move item to bottom of list
-      const fromIdx = order.indexOf(itemId);
+      // Move entry to bottom of list
+      const fromIdx = order.indexOf(slotKey);
       if (fromIdx !== -1) order.splice(fromIdx, 1);
-      order.push(itemId);
+      order.push(slotKey);
 
       save();
-      fbSyncItem(itemId);
+      if (isSlot) fbSyncSlotMap(state.current);
       fbSyncLayout(state.current, baseline);
       render();
     }
@@ -2104,15 +2324,22 @@
 
       dialog.querySelector('.btn-del-only').addEventListener('click', () => {
         overlay.remove();
-        // Clear category assignment for items that belonged to this category in the current layout
-        state.layouts[state.current].forEach(iid => {
-          const iitem = state.items[iid];
-          if (iitem && iitem.categoryIds && iitem.categoryIds[state.current] === headerId) {
-            iitem.categoryIds[state.current] = null;
-            iitem.updatedAt = Date.now();
-            fbSyncItem(iid);
+        // Clear category assignment for entries that belonged to this category in the current layout
+        state.layouts[state.current].forEach(sk => {
+          const { itemId: skItemId, catId: skCatId, isSlot: skIsSlot } = resolveSlot(sk, state.current);
+          if (skCatId !== headerId) return;
+          if (skIsSlot) {
+            state.slotMaps[state.current][sk].catId = null;
+          } else {
+            const iitem = state.items[skItemId];
+            if (iitem && iitem.categoryIds) {
+              iitem.categoryIds[state.current] = null;
+              iitem.updatedAt = Date.now();
+              fbSyncItem(skItemId);
+            }
           }
         });
+        if (state.slotMaps?.[state.current]) fbSyncSlotMap(state.current);
         state.layouts[state.current] = state.layouts[state.current].filter(x => x !== headerId);
         const inOtherLayout = Object.keys(state.layouts).some(l => l !== state.current && state.layouts[l].includes(headerId));
         if (!inOtherLayout) {
@@ -2135,10 +2362,25 @@
           state.items[headerId].updatedAt = Date.now();
           fbSyncItem(headerId);
         }
-        catItems.forEach(cid => {
-          state.items[cid].deleted = true;
-          state.items[cid].updatedAt = Date.now();
-          fbSyncItem(cid);
+        // catItems contains slotKeys; resolve each to its itemId for the delete
+        const deletedItemIds = new Set();
+        catItems.forEach(sk => {
+          const { itemId: catItemId } = resolveSlot(sk, state.current);
+          if (!deletedItemIds.has(catItemId)) {
+            state.items[catItemId].deleted = true;
+            state.items[catItemId].updatedAt = Date.now();
+            fbSyncItem(catItemId);
+            deletedItemIds.add(catItemId);
+          }
+          // Also remove any slot entries for this item from all layouts
+          ['A', 'B', 'C'].forEach(l => {
+            const slots = getSlotKeysForItem(catItemId, l);
+            slots.forEach(ssk => {
+              const si = state.layouts[l].indexOf(ssk);
+              if (si !== -1) state.layouts[l].splice(si, 1);
+              if (state.slotMaps?.[l]) delete state.slotMaps[l][ssk];
+            });
+          });
         });
         save();
         fbSyncLayout(state.current);
@@ -3233,40 +3475,43 @@
       document.body.appendChild(overlay);
     }
 
-    // Returns true if targetId is explicitly assigned to the currently-dragged header
-    function isInDraggedGroup(targetId) {
+    // Returns true if targetSlotKey is in the category of the currently-dragged header
+    function isInDraggedGroup(targetSlotKey) {
       if (!dragId) return false;
-      const draggedItem = state.items[dragId];
+      const { itemId: dragItemId } = resolveSlot(dragId, state.current);
+      const draggedItem = state.items[dragItemId];
       if (!draggedItem || draggedItem.type !== 'header') return false;
-      const targetItem = state.items[targetId];
-      return !!(targetItem && targetItem.categoryIds?.[state.current] === dragId);
+      const { catId: targetCatId } = resolveSlot(targetSlotKey, state.current);
+      return targetCatId === dragItemId;
     }
 
     // Returns true if dropping a header at (targetRow, after) would split another category from its items
-    function isInvalidHeaderDrop(draggedId, targetRow, targetId, after) {
-      const draggedItem = state.items[draggedId];
+    function isInvalidHeaderDrop(draggedSlotKey, targetRow, targetSlotKey, after) {
+      const { itemId: draggedItemId } = resolveSlot(draggedSlotKey, state.current);
+      const draggedItem = state.items[draggedItemId];
       if (!draggedItem || draggedItem.type !== 'header') return false;
-      const targetItem = state.items[targetId];
+      const { itemId: targetItemId, catId: targetCatId } = resolveSlot(targetSlotKey, state.current);
+      const targetItem = state.items[targetItemId];
       if (!after) {
         // Dropping before any categorized item always splits its category — block unconditionally
-        if (targetItem && targetItem.type === 'item' && targetItem.categoryIds?.[state.current]) return true;
+        if (targetItem && targetItem.type === 'item' && targetCatId) return true;
       } else {
         // Dropping after a header — block if the next visible DOM row belongs to it
         if (targetItem && targetItem.type === 'header') {
           let next = targetRow.nextElementSibling;
           while (next && next.classList.contains('drop-indicator')) next = next.nextElementSibling;
           if (next && next.dataset.id && !next.classList.contains('add-row')) {
-            const nextItem = state.items[next.dataset.id];
-            if (nextItem && nextItem.categoryIds?.[state.current] === targetId) return true;
+            const { catId: nextCatId } = resolveSlot(next.dataset.id, state.current);
+            if (nextCatId === targetItemId) return true;
           }
         }
         // Dropping after a categorized item — block if the next visible DOM row is in the same category
-        if (targetItem && targetItem.type === 'item' && targetItem.categoryIds?.[state.current]) {
+        if (targetItem && targetItem.type === 'item' && targetCatId) {
           let next = targetRow.nextElementSibling;
           while (next && next.classList.contains('drop-indicator')) next = next.nextElementSibling;
           if (next && next.dataset.id && !next.classList.contains('add-row')) {
-            const nextItem = state.items[next.dataset.id];
-            if (nextItem && nextItem.categoryIds?.[state.current] === targetItem.categoryIds[state.current]) return true;
+            const { catId: nextCatId } = resolveSlot(next.dataset.id, state.current);
+            if (nextCatId === targetCatId) return true;
           }
         }
       }
@@ -3308,53 +3553,63 @@
       if (dropIndicatorEl) { dropIndicatorEl.remove(); dropIndicatorEl = null; }
     }
 
-    function reorder(fromId, toId, after) {
+    function reorder(fromSlotKey, toSlotKey, after) {
       const order = state.layouts[state.current];
       const baseline = [...order];
-      const fromItem = state.items[fromId];
+      const { itemId: fromItemId, isSlot: fromIsSlot } = resolveSlot(fromSlotKey, state.current);
+      const fromItem = state.items[fromItemId];
 
       if (fromItem && fromItem.type === 'header') {
-        // Move header and all its items as a group
-        const group = [fromId, ...getCategoryItems(state.current, fromId, true)];
+        // Move header and all its items as a group (headers are never slots)
+        const group = [fromSlotKey, ...getCategoryItems(state.current, fromItemId, true)];
         group.forEach(gid => {
           const idx = order.indexOf(gid);
           if (idx !== -1) order.splice(idx, 1);
         });
-        const toIdx = order.indexOf(toId);
+        const toIdx = order.indexOf(toSlotKey);
         if (toIdx === -1) {
           group.forEach(gid => order.push(gid));
         } else {
           let insertAt = after ? toIdx + 1 : toIdx;
           // If dropping after a collapsed category header, skip past its hidden items
-          if (after && state.items[toId]?.type === 'header' && collapsedHeaders[state.current].has(toId)) {
-            while (insertAt < order.length &&
-                   state.items[order[insertAt]]?.categoryIds?.[state.current] === toId) {
+          const { itemId: toItemId } = resolveSlot(toSlotKey, state.current);
+          if (after && state.items[toItemId]?.type === 'header' && collapsedHeaders[state.current].has(toItemId)) {
+            while (insertAt < order.length) {
+              const { catId: eCatId } = resolveSlot(order[insertAt], state.current);
+              if (eCatId !== toItemId) break;
               insertAt++;
             }
           }
           [...group].reverse().forEach(gid => order.splice(insertAt, 0, gid));
         }
       } else {
-        const fromIdx = order.indexOf(fromId);
+        const fromIdx = order.indexOf(fromSlotKey);
         if (fromIdx === -1) return;
         order.splice(fromIdx, 1);
-        const toIdx = order.indexOf(toId);
-        order.splice(after ? toIdx + 1 : toIdx, 0, fromId);
-        // Update categoryId based on what's now immediately above the dropped item
-        const newIdx = order.indexOf(fromId);
+        const toIdx = order.indexOf(toSlotKey);
+        order.splice(after ? toIdx + 1 : toIdx, 0, fromSlotKey);
+        // Update category based on what's now immediately above the dropped item
+        const newIdx = order.indexOf(fromSlotKey);
         let newCategoryId = null;
         for (let i = newIdx - 1; i >= 0; i--) {
-          const pid = order[i];
-          const pitem = state.items[pid];
+          const { itemId: pItemId, catId: pCatId } = resolveSlot(order[i], state.current);
+          const pitem = state.items[pItemId];
           if (!pitem || pitem.deleted) continue;
-          newCategoryId = pitem.type === 'header' ? pid : (pitem.categoryIds?.[state.current] || null);
+          newCategoryId = pitem.type === 'header' ? pItemId : pCatId;
           break;
         }
-        if (!state.items[fromId].categoryIds) state.items[fromId].categoryIds = { A: null, B: null, C: null };
-        if (state.items[fromId].categoryIds[state.current] !== newCategoryId) {
-          state.items[fromId].categoryIds[state.current] = newCategoryId;
-          state.items[fromId].updatedAt = Date.now();
-          fbSyncItem(fromId);
+        if (fromIsSlot) {
+          if (state.slotMaps[state.current][fromSlotKey].catId !== newCategoryId) {
+            state.slotMaps[state.current][fromSlotKey].catId = newCategoryId;
+            fbSyncSlotMap(state.current);
+          }
+        } else {
+          if (!state.items[fromItemId].categoryIds) state.items[fromItemId].categoryIds = { A: null, B: null, C: null };
+          if (state.items[fromItemId].categoryIds[state.current] !== newCategoryId) {
+            state.items[fromItemId].categoryIds[state.current] = newCategoryId;
+            state.items[fromItemId].updatedAt = Date.now();
+            fbSyncItem(fromItemId);
+          }
         }
       }
 
@@ -4727,6 +4982,18 @@
         localStorage.setItem('receipt-api-key', remote.receiptApiKey.trim());
       }
 
+      // Slot maps: merge per-layout (remote wins for any slot key not already local)
+      if (remote.slotMaps) {
+        if (!state.slotMaps) state.slotMaps = { A: {}, B: {}, C: {} };
+        ['A', 'B', 'C'].forEach(l => {
+          if (remote.slotMaps[l]) {
+            if (!state.slotMaps[l]) state.slotMaps[l] = {};
+            Object.assign(state.slotMaps[l], remote.slotMaps[l]);
+            changed = true;
+          }
+        });
+      }
+
       if (changed) {
         localStorage.setItem('checklist-v2', JSON.stringify(state));
         // Don't tear down the DOM while the user is typing — defer until blur.
@@ -4790,6 +5057,13 @@
           .catch(() => {});
       };
 
+      fbSyncSlotMap = function(layout) {
+        if (!fbUid) return;
+        fbDb.ref('users/' + fbUid + '/checklist/slotMaps/' + layout)
+          .set(state.slotMaps?.[layout] || {})
+          .catch(() => {});
+      };
+
       function startListener() {
         if (fbListener) return;
         fbListener = fbDb.ref('users/' + fbUid + '/checklist').on('value', snap => {
@@ -4835,6 +5109,12 @@
                   B: [...(state.layouts.B || [])],
                   C: [...(state.layouts.C || [])]
                 };
+                // Restore slot maps from cloud
+                if (remote.slotMaps) {
+                  state.slotMaps = Object.assign({ A: {}, B: {}, C: {} }, remote.slotMaps);
+                } else {
+                  state.slotMaps = { A: {}, B: {}, C: {} };
+                }
                 localStorage.setItem('checklist-v2', JSON.stringify(state));
                 // Restore qty history from cloud
                 if (remote.qtyHistory) {
