@@ -1146,7 +1146,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v112';
+    const APP_VERSION = 'my-checklist-v113';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3100,7 +3100,7 @@
           '2. Re-check every item already in the list — if the receipt shows a different quantity than what was previously recorded, return the correct quantity from the receipt.\n' +
           'Focus especially on hard-to-read areas, the top and bottom of the receipt, and any items that may have been cut off or partially obscured.'
         : '';
-      const promptText = 'Extract all line items from this Costco receipt. Return ONLY a JSON object, no other text. Use this exact format:\n{"items_sold":23,"items":[{"item_code":"1234567","description":"ITEM NAME","quantity":1,"price":9.99}]}\nRules:\n- "items_sold": the integer shown next to "Items Sold" near the bottom of the receipt; use null if not visible\n- Include every item with a 6-7 digit item code\n- Exclude any item whose item code starts with "000037" (those are coupon/discount lines, not products)\n- Quantity: if a line in the format "X @ P" (a whole number, space, @, space, a decimal price with two decimal places such as 1.99 or 12.99) appears immediately above an item line, X is the quantity for that item and P is the unit price; the price shown on the item line is the total. Do NOT associate that quantity line with any prior item.' + retryNote;
+      const promptText = 'Extract all line items from this Costco receipt. Return ONLY a JSON object, no other text. Use this exact format:\n{"items_sold":23,"items":[{"item_code":"1234567","description":"ITEM NAME","quantity":1,"price":9.99}]}\nRules:\n- "items_sold": the integer shown next to "Items Sold" near the bottom of the receipt; use null if not visible\n- Include every item with a 6-7 digit item code\n- Exclude any item whose item code starts with "000037" (those are coupon/discount lines, not products)\n- Quantity: a line containing only "X @ P" (a whole number, space, @, space, a decimal price) is a quantity/unit-price annotation. It belongs to the item on the line BELOW it — not the item above it. The item above is a separate product with its own quantity (usually 1). The item below uses X as its quantity and the price printed on that item line is the total cost. Example:\n  "E    1748763 KS BRKFSTSND    15.49 E"  → quantity 1, price 15.49\n  " 8 @ 13.99"\n  "      430006 WHITEHAVEN     111.92 A"  → quantity 8, price 111.92\n  Do NOT skip the item that follows a "X @ P" line — it must appear in the output.' + retryNote;
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
