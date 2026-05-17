@@ -1146,7 +1146,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v116';
+    const APP_VERSION = 'my-checklist-v117';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3219,6 +3219,7 @@
       const ta = document.createElement('textarea');
       ta.className = 'paste-receipt-textarea';
       ta.placeholder = 'Paste receipt text here\u2026';
+      ta.addEventListener('focus', () => { _lastFocusTime = Date.now(); });
 
       const submitBtn = document.createElement('button');
       submitBtn.className = 'receipt-add-btn';
@@ -3666,10 +3667,13 @@
     let _pendingRender = false;
 
     // Flush any render that was deferred while a textarea had focus.
+    // Use setTimeout so iOS can finish its focus transition before we tear down
+    // the DOM — a synchronous render() here removes the just-blurred element,
+    // which causes iOS to cancel the pending focus on the next element.
     document.addEventListener('focusout', e => {
       if (e.target.tagName === 'TEXTAREA' && _pendingRender) {
         _pendingRender = false;
-        render();
+        setTimeout(render, 0);
       }
     });
 
