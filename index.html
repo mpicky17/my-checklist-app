@@ -1007,7 +1007,8 @@
       position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%) translateY(20px);
       background: rgba(0,0,0,0.78); color: #fff; font-size: 0.875rem;
       padding: 10px 16px; border-radius: 8px; z-index: 900;
-      opacity: 0; transition: opacity 0.25s, transform 0.25s; white-space: nowrap;
+      opacity: 0; transition: opacity 0.25s, transform 0.25s;
+      max-width: calc(100vw - 32px); text-align: center;
       pointer-events: none;
     }
     .qty-usage-toast--visible { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -1156,7 +1157,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v118';
+    const APP_VERSION = 'my-checklist-v119';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
