@@ -1157,7 +1157,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v119';
+    const APP_VERSION = 'my-checklist-v120';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -3999,6 +3999,19 @@
       const dotColor   = '#4f46e5';
       const dashColor  = dark ? '#3a3a3c' : '#e5e7eb';
 
+      // Shared click-to-reveal label — only one shown at a time, renders on top
+      const labelEl = document.createElementNS(svgNS, 'text');
+      labelEl.setAttribute('text-anchor', 'middle');
+      labelEl.setAttribute('font-size', '10');
+      labelEl.setAttribute('font-family', 'sans-serif');
+      labelEl.setAttribute('font-weight', '600');
+      labelEl.setAttribute('fill', dark ? '#e0e7ff' : '#1e1b4b');
+      labelEl.style.paintOrder = 'stroke fill';
+      labelEl.style.stroke = dark ? '#1e1b4b' : 'white';
+      labelEl.style.strokeWidth = '3px';
+      labelEl.setAttribute('pointer-events', 'none');
+      labelEl.setAttribute('visibility', 'hidden');
+
       function makeLine(x1, y1, x2, y2, stroke, sw, dash) {
         const l = document.createElementNS(svgNS, 'line');
         l.setAttribute('x1', x1); l.setAttribute('y1', y1);
@@ -4086,7 +4099,31 @@
               r.setAttribute('rx', '2');
               svg.appendChild(r);
             }
+            // Transparent hit area over the full bar column
+            if (c > 0.001 || w > 0.001) {
+              const totalH = ((c + w) / maxConsumed) * gH;
+              const hitH = Math.max(totalH, 20);
+              const hit = document.createElementNS(svgNS, 'rect');
+              hit.setAttribute('x', x - barW / 2 - 5);
+              hit.setAttribute('y', PAD_T + gH - hitH - 4);
+              hit.setAttribute('width', barW + 10);
+              hit.setAttribute('height', hitH + 4);
+              hit.setAttribute('fill', 'transparent');
+              hit.style.cursor = 'pointer';
+              const dispC = c > 0.001 ? String(Math.round(c * 100) / 100) : null;
+              const dispW = w > 0.001 ? String(Math.round(w * 100) / 100) : null;
+              const dispVal = [dispC ? dispC + ' used' : null, dispW ? dispW + ' wasted' : null].filter(Boolean).join(' · ');
+              hit.addEventListener('click', () => {
+                const topY = PAD_T + gH - ((c + w) / maxConsumed) * gH;
+                labelEl.setAttribute('x', Math.max(PAD_L + 18, Math.min(W - PAD_R - 18, x)));
+                labelEl.setAttribute('y', Math.max(PAD_T + 10, topY - 4));
+                labelEl.textContent = dispVal;
+                labelEl.setAttribute('visibility', 'visible');
+              });
+              svg.appendChild(hit);
+            }
           });
+          svg.appendChild(labelEl);
           chartArea.appendChild(svg);
         }
       } else {
@@ -4101,14 +4138,34 @@
         svg.appendChild(polyline);
 
         timestamps.forEach((ts, i) => {
+          const cx = xOf(ts);
+          const cy = yOf(values[i]);
           const circle = document.createElementNS(svgNS, 'circle');
-          circle.setAttribute('cx', xOf(ts));
-          circle.setAttribute('cy', yOf(values[i]));
+          circle.setAttribute('cx', cx);
+          circle.setAttribute('cy', cy);
           circle.setAttribute('r', '3');
           circle.setAttribute('fill', dotColor);
           svg.appendChild(circle);
+          // Transparent hit area (larger tap target)
+          const hit = document.createElementNS(svgNS, 'circle');
+          hit.setAttribute('cx', cx);
+          hit.setAttribute('cy', cy);
+          hit.setAttribute('r', '10');
+          hit.setAttribute('fill', 'transparent');
+          hit.style.cursor = 'pointer';
+          const dispVal = isFill
+            ? (values[i] >= 1 ? 'Full' : values[i] >= 0.5 ? 'Half' : values[i] >= 0.25 ? 'Low' : 'Empty')
+            : String(Math.round(values[i] * 100) / 100);
+          hit.addEventListener('click', () => {
+            labelEl.setAttribute('x', Math.max(PAD_L + 14, Math.min(W - PAD_R - 14, cx)));
+            labelEl.setAttribute('y', Math.max(PAD_T + 10, cy - 10));
+            labelEl.textContent = dispVal;
+            labelEl.setAttribute('visibility', 'visible');
+          });
+          svg.appendChild(hit);
         });
 
+        svg.appendChild(labelEl);
         chartArea.appendChild(svg);
       }
 
