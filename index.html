@@ -1002,6 +1002,16 @@
       .waste-dialog-cancel  { background: #2c2c2e; color: #f2f2f7; }
     }
 
+    /* ── Usage offset toast ─────────────────────────────────────────────── */
+    .qty-usage-toast {
+      position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: rgba(0,0,0,0.78); color: #fff; font-size: 0.875rem;
+      padding: 10px 16px; border-radius: 8px; z-index: 900;
+      opacity: 0; transition: opacity 0.25s, transform 0.25s; white-space: nowrap;
+      pointer-events: none;
+    }
+    .qty-usage-toast--visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
     /* ── Duplicate delete dialog ─────────────────────────────────────────── */
     .dup-delete-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.45);
@@ -1146,7 +1156,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v117';
+    const APP_VERSION = 'my-checklist-v118';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1319,6 +1329,56 @@
       qtyHistory[id][dateStr] = entry;
       saveQtyHistory();
       fbSyncQtyHistory(id, dateStr, entry);
+    }
+
+    // ── Usage-offset toast helpers ────────────────────────────────────────
+
+    // Returns the numeric qty from the most recent recorded day before today,
+    // or null if no prior history exists.
+    function getPriorDayQty(id) {
+      const today = new Date().toLocaleDateString('en-CA');
+      const history = qtyHistory[id] || {};
+      const prior = Object.keys(history).filter(d => d < today).sort();
+      if (!prior.length) return null;
+      const e = history[prior[prior.length - 1]];
+      return typeof e === 'number' ? e : (e.v ?? null);
+    }
+
+    // Returns a toast message if a decrement from prevQtyNum to newQtyNum
+    // would cause usage to go unrecorded; null if no warning is needed.
+    // baseline = prior-day qty + any same-day receipt additions.
+    function getUsageToastMessage(id, prevQtyNum, newQtyNum) {
+      if (prevQtyNum === null || newQtyNum === null) return null;
+      const prior = getPriorDayQty(id);
+      if (prior === null) return null;
+      const today = new Date().toLocaleDateString('en-CA');
+      const entry = (qtyHistory[id] || {})[today];
+      const addedToday = entry && typeof entry === 'object' ? (entry.added || 0) : 0;
+      const baseline = prior + addedToday;
+      if (prevQtyNum <= baseline) return null; // not above baseline — no warning needed
+      if (newQtyNum >= baseline) {
+        // Case 1: decrement stays at or above baseline — zero usage will register
+        return 'Today\u2019s increase was offset \u2014 this change won\u2019t register as usage.';
+      }
+      // Case 2: crosses below baseline — partial usage registers but the
+      // manually-added excess (prevQtyNum \u2212 baseline) is silently lost
+      const missed = Math.round((prevQtyNum - baseline) * 100) / 100;
+      return missed + ' unit' + (missed === 1 ? '' : 's') + ' added today won\u2019t be counted as usage.';
+    }
+
+    function showQtyToast(message) {
+      const existing = document.getElementById('qty-usage-toast');
+      if (existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.id = 'qty-usage-toast';
+      toast.className = 'qty-usage-toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('qty-usage-toast--visible'));
+      setTimeout(() => {
+        toast.classList.remove('qty-usage-toast--visible');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
     }
 
     // One-time seed: when this feature first runs, record today's qty for all
@@ -2476,6 +2536,7 @@
     function commitQtyValue(id, type, value, cell, plusBtn, minusBtn) {
       const item = state.items[id];
       if (!item) return;
+      const prevQtyNum = qtyToNumber(item);
       item.qtyType  = type;
       item.qtyValue = value;
       if (type === 'fill') item.qtyWasFill = false;
@@ -2485,6 +2546,9 @@
       fbSyncItem(id);
       refreshQtyCell(cell, type, value);
       hideAllQtyControls();
+      const newQtyNum = qtyToNumber(item);
+      const toastMsg = getUsageToastMessage(id, prevQtyNum, newQtyNum);
+      if (toastMsg) showQtyToast(toastMsg);
     }
 
     function showFillButtons(id, cell, plusBtn, minusBtn) {
@@ -2692,6 +2756,7 @@
       function applyMinus() {
         const it = state.items[id];
         if (!it) return;
+        const prevQtyNum = qtyToNumber(it);
         if (it.qtyType === 'number') {
           const cur  = it.qtyValue || 0;
           const next = Number.isInteger(cur) ? Math.max(0, cur - 1) : Math.floor(cur);
@@ -2707,12 +2772,15 @@
           const idx = levels.indexOf(it.qtyValue);
           if (idx > 0) it.qtyValue = levels[idx - 1];
         }
+        const newQtyNum = qtyToNumber(it);
         it.updatedAt = Date.now();
         recordQtyHistory(id);
         save();
         fbSyncItem(id);
         refreshQtyCell(cell, it.qtyType, it.qtyValue);
         refreshQtyButtons(plusBtn, minusBtn, it.qtyType, it.qtyValue, wasteBtn);
+        const toastMsg = getUsageToastMessage(id, prevQtyNum, newQtyNum);
+        if (toastMsg) showQtyToast(toastMsg);
       }
 
       let _mTX = 0, _mTY = 0;
