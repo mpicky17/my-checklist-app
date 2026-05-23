@@ -166,6 +166,15 @@
       touch-action: manipulation;
     }
 
+    .cb-wrap {
+      display: inline-flex;
+      border-radius: 4px;
+      padding: 2px;
+      flex-shrink: 0;
+    }
+    .row.checked .cb-wrap.cb-red    { background-color: #ef4444; }
+    .row.checked .cb-wrap.cb-yellow { background-color: #f59e0b; }
+
     .row input[type="text"],
     .row textarea {
       flex: 1;
@@ -1157,7 +1166,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'my-checklist-v120';
+    const APP_VERSION = 'my-checklist-v121';
     document.getElementById('app-version').textContent = APP_VERSION;
 
     // State: items are shared, layouts store independent orderings of item IDs
@@ -1330,6 +1339,7 @@
       qtyHistory[id][dateStr] = entry;
       saveQtyHistory();
       fbSyncQtyHistory(id, dateStr, entry);
+      refreshRowInventoryStatus(id);
     }
 
     // ── Usage-offset toast helpers ────────────────────────────────────────
@@ -1445,6 +1455,42 @@
         list.insertBefore(createRow(slotKey), addRow);
       });
       list.querySelectorAll('.row:not(.add-row) textarea').forEach(autoResizeTextarea);
+    }
+
+    function getItemInventoryStatus(itemId) {
+      const raw = Object.entries(qtyHistory[itemId] || {});
+      if (raw.length < 2) return null;
+      raw.sort((a, b) => a[0].localeCompare(b[0]));
+
+      const values  = raw.map(e => typeof e[1] === 'number' ? e[1] : e[1].v);
+      const addeds  = raw.map(e => typeof e[1] === 'number' ? 0 : (e[1].added  || 0));
+      const wasteds = raw.map(e => typeof e[1] === 'number' ? 0 : (e[1].wasted || 0));
+
+      const tMin = new Date(raw[0][0] + 'T00:00:00').getTime();
+      const tMax = new Date(raw[raw.length - 1][0] + 'T00:00:00').getTime();
+      const totalDays = (tMax - tMin) / 86400000;
+      if (totalDays < 14) return null;
+
+      let totalConsumed = 0;
+      for (let i = 1; i < values.length; i++) {
+        totalConsumed += Math.max(0, values[i - 1] + addeds[i] - values[i] - wasteds[i]);
+      }
+      if (totalConsumed === 0) return null;
+
+      const perWeek = (totalConsumed / totalDays) * 7;
+      const current = values[values.length - 1];
+
+      if (current - perWeek < 0)     return 'red';
+      if (current - perWeek * 2 < 0) return 'yellow';
+      return null;
+    }
+
+    function refreshRowInventoryStatus(itemId) {
+      document.querySelectorAll('.row[data-item-id="' + itemId + '"]').forEach(row => {
+        if (!row._cbWrap) return;
+        const status = getItemInventoryStatus(itemId);
+        row._cbWrap.className = 'cb-wrap' + (status ? ' cb-' + status : '');
+      });
     }
 
     function createRow(slotKey) {
@@ -1774,7 +1820,12 @@
 
       // ── Assemble row ──────────────────────────────────────────────────────
       row.appendChild(handle);
-      row.appendChild(leftCtrl);
+      const _invStatus = !isHeader ? getItemInventoryStatus(id) : null;
+      const cbWrap = document.createElement('span');
+      cbWrap.className = 'cb-wrap' + (_invStatus ? ' cb-' + _invStatus : '');
+      cbWrap.appendChild(leftCtrl);
+      row._cbWrap = cbWrap;
+      row.appendChild(cbWrap);
       if (!isHeader) {
         row.appendChild(createQtyWrapper(id));
       }
